@@ -46,3 +46,17 @@ To get the packages needed, make sure you have a venv (see above) and then get t
 ```
 python3 -m pip install transformers datasets torchvision peft accelerate bitsandbytes tensorboard
 ```
+
+Then, train the model on the cleaned dataset ex:
+
+```
+python train_model.py \
+    --data_dir glyphs224 \     
+    --output_dir dinov2-fonts \
+    --batch_size 32 \
+    --epochs 100 \
+    --learning_rate 1e-4 \
+    --lora_rank 8 \
+    --lora_alpha 16 \
+    --lora_dropout 0.1 \
+```
