@@ -7,6 +7,7 @@ from PIL import Image, ImageDraw, ImageFont
 from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
+LENGTH_OF_STRINGS = 2
 
 # ---------------------------------------------------------------------
 # helpers
@@ -49,12 +50,14 @@ def render_and_crop(char: str, font: ImageFont.FreeTypeFont,
         return None
     glyph = canvas.crop(bbox)
 
-    # pad to square & resize
-    side  = max(glyph.size)
-    square = Image.new("L", (side, side), 255)
-    square.paste(glyph, ((side - glyph.width) // 2,
-                         (side - glyph.height) // 2))
-    return square.resize((img_size, img_size), Image.LANCZOS)
+    # For strings, we want to maintain the aspect ratio but ensure the height fits
+    # Calculate the target height while maintaining aspect ratio
+    target_height = img_size
+    aspect_ratio = glyph.width / glyph.height
+    target_width = int(target_height * aspect_ratio)
+    
+    # Resize maintaining aspect ratio
+    return glyph.resize((target_width, target_height), Image.LANCZOS)
 
 # ---------------------------------------------------------------------
 # main
@@ -78,13 +81,23 @@ def build_dataset(font_dir, out_dir, chars, render_size, img_size, padding, no_c
         try:
             font = ImageFont.truetype(str(font_path), render_size, layout_engine=ImageFont.Layout.BASIC)
 
-            for char in chars:
-                code = f"{ord(char):04X}"
-                target_file = family_dir / f"{font_path.stem}_U{code}.png"
+            strings_to_generate = []
+
+            cur_frontier = [char for char in chars]
+            strings_to_generate.extend(cur_frontier)
+
+            for _ in range(LENGTH_OF_STRINGS - 1):
+                logger.info(f"Generating {len(cur_frontier)} strings")
+                new_frontier = [cur_string + new_char for cur_string in cur_frontier for new_char in chars]
+                strings_to_generate.extend(new_frontier)
+                cur_frontier = new_frontier
+
+            for string in strings_to_generate:
+                target_file = family_dir / f"{font_path.stem}_{string}.png"
                 if target_file.exists() and no_clobber:
                     logger.info(f"Skipping {target_file} because it already exists")
                     continue
-                img = render_and_crop(char, font, render_size, padding, img_size)
+                img = render_and_crop(string, font, render_size, padding, img_size)
                 if img is None:
                     continue
                 img.save(target_file)
@@ -107,7 +120,7 @@ def cli():
     ap.add_argument("--img_size",  type=int, default=224, help="Final square size (px)")
     ap.add_argument("--render_size", type=int, default=1024,
                     help="Font size used for initial rendering")
-    ap.add_argument("--padding",   type=int, default=32, help="Pixels of padding before crop")
+    ap.add_argument("--padding",   type=int, default=64, help="Pixels of padding before crop")
     ap.add_argument("--no-clobber", action="store_true", help="Skip existing files, useful for rerunning when there are errors.")
     ap.add_argument("--verbose",   action="store_true", help="Verbose output")
     args = ap.parse_args()
