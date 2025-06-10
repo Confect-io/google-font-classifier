@@ -29,6 +29,13 @@ source myEnv/bin/activate
 Then, install the packages
 
 ```
-python3 -m pip install tqdm
-python3 -m pip install pillow
+python3 -m pip install tqdm pillow
+```
+
+3. Train the model:
+
+To get the packages needed, make sure you have a venv (see above) and then get the packages:
+
+```
+python3 -m pip install transformers datasets torchvision peft accelerate bitsandbytes tensorboard
 ```
