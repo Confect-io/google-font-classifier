@@ -15,8 +15,8 @@ python dataset_generator.py \
     --out_dir ./glyphs224 \
     --chars ascii \
     --img_size 224 \
-    --render_size 1024 \
-    --padding 32
+    --font_size 1024 \
+    --padding 128
 ```
 
 To get the packages needed, create a venv
