@@ -90,14 +90,26 @@ if __name__ == "__main__":
     # Convert grayscale to RGB first
     to_rgb = T.Lambda(lambda img: img.convert('RGB'))
 
+    # Define padding transform to ensure square images
+    def pad_to_square(img):
+        w, h = img.size
+        max_size = max(w, h)
+        pad_w = (max_size - w) // 2
+        pad_h = (max_size - h) // 2
+        padding = (pad_w, pad_h, max_size - w - pad_w, max_size - h - pad_h)
+        return T.Pad(padding, fill=0)(img)
+
     train_aug   = T.Compose([
         to_rgb,  # Convert to RGB first
-        T.ToTensor(), normalize,
+        pad_to_square,  # Pad to square
+        T.Resize(size),  # Resize to target size
+        T.ToTensor(), 
+        normalize,
     ])
     val_aug     = T.Compose([
         to_rgb,  # Convert to RGB first
-        T.Resize(size + 32), 
-        T.CenterCrop(size), 
+        pad_to_square,  # Pad to square
+        T.Resize(size),  # Resize to target size
         T.ToTensor(), 
         normalize
     ])
