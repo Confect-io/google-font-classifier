@@ -62,12 +62,17 @@ if __name__ == "__main__":
     #     └─ ...
 
     logger.info(f"Loading dataset from {args.data_dir}")
-    dataset = load_dataset("imagefolder", data_dir=args.data_dir)
-    
-    # Debug: Print the first example to see its structure
-    logger.info("Dataset structure:")
-    logger.info(f"First example keys: {dataset['train'][0].keys()}")
-    logger.info(f"First example: {dataset['train'][0]}")
+    # Get label names from directory names
+    label_names = os.listdir(f"{args.data_dir}/train")
+    logger.info(f"Found label names: {label_names}")
+
+    if len(label_names) <= 1:
+        raise ValueError(f"Expected at least 2 labels, got {label_names=}, imagefolder will not label the dataset if there are less than 2 labels.")
+
+    dataset = load_dataset(
+        "imagefolder",
+        data_dir=args.data_dir,
+    )
     
     # Always perform train/test split
     logger.info(f"Performing train/test split with test_size={args.test_size}")
@@ -103,26 +108,38 @@ if __name__ == "__main__":
     def transform(example, train=True):
         # The dataset uses 'image' as the key for PIL images
         example["pixel_values"] = train_aug(example["image"]) if train else val_aug(example["image"])
+        # The label is already set by the ImageFolder dataset loader
         return example
 
     # Apply transformations to both splits
     logger.info("Applying data transformations")
     # Create new datasets with transformations
-    train_dataset = dataset["train"].map(lambda x: transform(x, train=True), remove_columns=["image"])
-    test_dataset = dataset["test"].map(lambda x: transform(x, train=False), remove_columns=["image"])
+    train_dataset = dataset["train"].map(
+        lambda x: transform(x, train=True),
+        remove_columns=["image"],
+        desc="Transforming training data"
+    )
+    test_dataset = dataset["test"].map(
+        lambda x: transform(x, train=False),
+        remove_columns=["image"],
+        desc="Transforming test data"
+    )
+    
+    # Set the format to torch tensors
+    train_dataset.set_format(type="torch", columns=["pixel_values", "label"])
+    test_dataset.set_format(type="torch", columns=["pixel_values", "label"])
+    
     logger.info("Data preprocessing complete")
 
     ######################################################################
     # 3. Load DINO v2 and (optionally) add LoRA adapters
     # -------------------------------------------------------------------
     logger.info("Loading DINOv2 model")
-    num_labels = train_dataset.features["label"].num_classes
-    logger.info(f"Number of classes: {num_labels}")
     
     # First load the model without the classification head
     model = Dinov2ForImageClassification.from_pretrained(
         "facebook/dinov2-base-imagenet1k-1-layer",
-        num_labels=num_labels,
+        num_labels=len(label_names),
         ignore_mismatched_sizes=True,  # Ignore the classification head size mismatch
     )
 
