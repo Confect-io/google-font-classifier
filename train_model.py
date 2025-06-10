@@ -1,14 +1,17 @@
-import os, torch, torchvision.transforms as T
 import argparse
+import logging
+import os
+
+import torch
+import torchvision.transforms as T
 from datasets import load_dataset
+from peft import LoraConfig, get_peft_model
 from transformers import (
     AutoImageProcessor,
     Dinov2ForImageClassification,
-    TrainingArguments,
     Trainer,
+    TrainingArguments,
 )
-from peft import LoraConfig, get_peft_model
-import logging
 
 logger = logging.getLogger(__name__)
 
