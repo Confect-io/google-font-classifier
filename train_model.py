@@ -67,7 +67,7 @@ if __name__ == "__main__":
     logger.info(f"Loading dataset from {args.data_dir}")
     # Get label names from directory names
     label_names = os.listdir(f"{args.data_dir}/train")
-    logger.info(f"Found label names: {label_names}")
+    logger.info(f"Found {len(label_names)} labels")
 
     if len(label_names) <= 1:
         raise ValueError(f"Expected at least 2 labels, got {label_names=}, imagefolder will not label the dataset if there are less than 2 labels.")
@@ -77,10 +77,7 @@ if __name__ == "__main__":
         data_dir=args.data_dir,
     )
     
-    # Always perform train/test split
-    logger.info(f"Performing train/test split with test_size={args.test_size}")
-    dataset = dataset["train"].train_test_split(test_size=args.test_size, seed=args.seed)
-    logger.info(f"Split complete. Train size: {len(dataset['train'])}, Test size: {len(dataset['test'])}")
+    logger.info(f"Train size: {len(dataset['train'])}, Test size: {len(dataset['test'])}")
 
     ######################################################################
     # 2. Pre‑processing & augmentation
@@ -95,9 +92,6 @@ if __name__ == "__main__":
 
     train_aug   = T.Compose([
         to_rgb,  # Convert to RGB first
-        T.RandomResizedCrop(size, scale=(0.9, 1.0)),
-        T.RandomRotation(5),
-        T.GaussianBlur(kernel_size=3, sigma=(0.1, 1.2)),
         T.ToTensor(), normalize,
     ])
     val_aug     = T.Compose([
