@@ -32,7 +32,14 @@ Then, install the packages
 python3 -m pip install tqdm pillow
 ```
 
-3. Train the model:
+3. Clean the dataset:
+```
+python dataset_cleaner.py glyphs224
+```
+
+This will print any bad image paths that you can manually inspect and remove (in expectation, only 1/225000 should be malformed).
+
+4. Train the model:
 
 To get the packages needed, make sure you have a venv (see above) and then get the packages:
 
