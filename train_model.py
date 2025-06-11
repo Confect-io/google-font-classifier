@@ -242,4 +242,18 @@ if __name__ == "__main__":
     logger.info("Evaluating on test set")
     test_results = trainer.evaluate(test_dataset)
     logger.info(f"Test results: {test_results}")
+
+    # Save the final model
+    logger.info("Saving final model")
+    final_model_path = os.path.join(args.output_dir, "final_model")
+    trainer.save_model(final_model_path)
+    logger.info(f"Final model saved to {final_model_path}")
+    
+    # Save the label names for future reference
+    import json
+    label_mapping = {i: label for i, label in enumerate(label_names)}
+    with open(os.path.join(final_model_path, "label_mapping.json"), "w") as f:
+        json.dump(label_mapping, f, indent=2)
+    logger.info("Label mapping saved")
+    
     # trainer.push_to_hub("your‑username/dinov2-font‑classifier")
