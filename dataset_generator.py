@@ -8,6 +8,7 @@ import pathlib
 import random
 import sys
 
+from fontTools.ttLib import TTFont
 from PIL import Image, ImageDraw, ImageFont
 from tqdm import tqdm
 
@@ -40,6 +41,9 @@ FONT_ALLOWLIST = [
 "MeowScript",
 "PatrickHand",
 ]
+
+def font_is_variable(font_path: pathlib.Path) -> bool:
+    return "fvar" in TTFont(str(font_path))
 
 def char_set(name: str) -> str:
     if name == "ascii":
@@ -113,49 +117,63 @@ def build_dataset(font_dir, out_dir, chars, font_size, img_size, padding, no_clo
 
     progress_bar = tqdm(font_paths, unit="font")
     for font_path in progress_bar:
-        progress_bar.set_description(font_path.stem)
-        family_train_dir = train_dir / font_path.stem
-        family_test_dir = test_dir / font_path.stem
-        family_train_dir.mkdir(parents=True, exist_ok=True)
-        family_test_dir.mkdir(parents=True, exist_ok=True)
+        # font_path.stem is something like "Roboto-Regular" or "Roboto-Regular[wdth,wght]", we clip out the [wdth,wght] part (OpenType “variation axes”)
+        font_family_name = font_path.stem.split("[")[0]
+        progress_bar.set_description(font_family_name)
 
         try:
             font = ImageFont.truetype(str(font_path), font_size, layout_engine=ImageFont.Layout.BASIC)
 
-            strings_to_generate = []
+            def generate_all_images_for_font(font: ImageFont.FreeTypeFont, font_name: str):
+                font_train_dir = train_dir / font_name
+                font_test_dir = test_dir / font_name
+                font_train_dir.mkdir(exist_ok=True)
+                font_test_dir.mkdir(exist_ok=True)
 
-            cur_frontier = [char for char in chars]
-            strings_to_generate.extend(cur_frontier)
+                strings_to_generate = []
 
-            for i in range(2,10):
-                random_string = ''.join(random.choices(chars + ' ', k=i))
-                strings_to_generate.append(random_string)
+                cur_frontier = [char for char in chars]
+                strings_to_generate.extend(cur_frontier)
 
-            def generate_image_for_string(string: str, font: ImageFont.FreeTypeFont, root: pathlib.Path):
-                target_file = root / f"{font_path.stem}_{string}.png"
-                if target_file.exists() and no_clobber:
-                    logger.info(f"Skipping {target_file} because it already exists")
-                    return
-                img = render_and_crop(string, font, font_size, padding, img_size)
-                if img is None:
-                    logger.warning(f"Failed to render {string} for {font_path.stem}")
-                    return
-                img.save(target_file)
-                logging.info(f"Saved {target_file}")
+                for i in range(2,10):
+                    random_string = ''.join(random.choices(chars + ' ', k=i))
+                    strings_to_generate.append(random_string)
 
-            for string in strings_to_generate:
-                generate_image_for_string(string, font, family_train_dir)
+                def generate_image_for_string(string: str, font: ImageFont.FreeTypeFont, root: pathlib.Path):
+                    target_file = root / f"{font_name}_{string}.png"
+                    if target_file.exists() and no_clobber:
+                        logger.info(f"Skipping {target_file} because it already exists")
+                        return
+                    img = render_and_crop(string, font, font_size, padding, img_size)
+                    if img is None:
+                        logger.warning(f"Failed to render {string} for {font_name}")
+                        return
+                    img.save(target_file)
+                    logger.info(f"Saved {target_file}")
 
-            for i in range(2, 10):
-                random_string = ''.join(random.choices(chars + ' ', k=i))
-                generate_image_for_string(random_string, font, family_test_dir)
+                for string in strings_to_generate:
+                    generate_image_for_string(string, font, font_train_dir)
+
+                for i in range(2, 10):
+                    random_string = ''.join(random.choices(chars + ' ', k=i))
+                    generate_image_for_string(random_string, font, font_test_dir)
+
+            
+            if font_is_variable(font_path):
+                font_variations = font.get_variation_names()
+                for variation in font_variations:
+                    font.set_variation_by_name(variation)
+                    variation_str = variation.decode("utf-8").replace(" ", "_")
+                    generate_all_images_for_font(font, f"{font_family_name}_{variation_str}")
+            else:
+                generate_all_images_for_font(font, font_family_name)
 
         except Exception as e:
             failed_fonts.append(font_path)
             logging.error(f"{font_path.name}: {e}")
             continue
 
-        logging.info(f"Processed {len(chars)} glyphs for {font_path.stem}")
+        logging.info(f"Processed {len(chars)} glyphs for {font_family_name}")
     
     if failed_fonts:
         logging.warning(f"Failed to process {len(failed_fonts)} fonts: {failed_fonts}")
