@@ -6,7 +6,8 @@ import os
 import torch
 import torchvision.transforms as T
 from datasets import load_dataset
-from peft import LoraConfig, get_peft_model
+from peft import LoraConfig, PeftModel, get_peft_model
+from safetensors import safe_open
 from transformers import (
     AutoImageProcessor,
     Dinov2ForImageClassification,
@@ -149,15 +150,7 @@ if __name__ == "__main__":
     logger.info("Loading DINOv2 model")
     
     # First load the model without the classification head
-    if args.checkpoint:
-        logger.info(f"Loading from checkpoint: {args.checkpoint}")
-        model = Dinov2ForImageClassification.from_pretrained(
-            args.checkpoint,
-            num_labels=len(label_names),
-            ignore_mismatched_sizes=True,
-        )
-    else:
-        model = Dinov2ForImageClassification.from_pretrained(
+    model = Dinov2ForImageClassification.from_pretrained(
             "facebook/dinov2-base-imagenet1k-1-layer",
             num_labels=len(label_names),
             ignore_mismatched_sizes=True,
@@ -171,8 +164,47 @@ if __name__ == "__main__":
         target_modules = ["query", "value"],  # Q & V proj in ViT blocks
         lora_dropout  = args.lora_dropout,
         bias          = "none",
+        modules_to_save = ["classifier"],  # IMPORTANT: Save classification head too!
     )
-    model = get_peft_model(model, peft_cfg)
+
+    # Handle checkpoint loading properly
+    checkpoint_for_trainer = None
+    if args.checkpoint:
+        logger.info(f"Loading checkpoint: {args.checkpoint}")
+                
+        # Check if it's a PEFT checkpoint with adapter weights
+        adapter_path = os.path.join(args.checkpoint, "adapter_model.safetensors")
+        if not os.path.exists(adapter_path):
+            raise FileNotFoundError(f"PEFT checkpoint not found at {adapter_path}")
+        
+        logger.info("Found PEFT checkpoint...")
+        
+        # Check if we have enhanced checkpoint with full model state
+        full_model_path = os.path.join(args.checkpoint, "full_model_state.pt")
+        metadata_path = os.path.join(args.checkpoint, "model_metadata.json")
+        
+        if not (os.path.exists(full_model_path) and os.path.exists(metadata_path)):
+            raise FileNotFoundError(f"Enhanced checkpoint not found at {full_model_path} or {metadata_path}")
+    
+        logger.info("Found enhanced checkpoint with full model state!")
+        
+        # Load metadata and full state
+        with open(metadata_path, "r") as f:
+            metadata = json.load(f)
+        
+        if metadata["num_labels"] != len(label_names):
+            raise ValueError(f"Label count mismatch: checkpoint has {metadata['num_labels']}, current dataset has {len(label_names)}")
+
+        model = get_peft_model(model, peft_cfg)
+        full_state_dict = torch.load(full_model_path, map_location="cpu")
+        model.load_state_dict(full_state_dict, strict=False)
+        logger.info("Enhanced checkpoint loaded successfully!")
+
+        checkpoint_for_trainer = args.checkpoint
+    else:
+        # No checkpoint
+        model = get_peft_model(model, peft_cfg)
+
     model.print_trainable_parameters()
 
     ######################################################################
@@ -219,8 +251,8 @@ if __name__ == "__main__":
         load_best_model_at_end = True,
         metric_for_best_model = "eval_accuracy",
         greater_is_better = True,
-        # Add resume from checkpoint support
-        resume_from_checkpoint = args.checkpoint is not None,
+        # Pass the actual checkpoint path for proper resumption
+        resume_from_checkpoint = checkpoint_for_trainer,
     )
 
     trainer = Trainer(
@@ -232,10 +264,27 @@ if __name__ == "__main__":
         compute_metrics = compute_metrics,
     )
 
+    # If loading from checkpoint, evaluate immediately to verify the model state
+    if args.checkpoint:
+        logger.info("Evaluating model immediately after checkpoint loading to verify state...")
+        
+        # Check which adapter is active (for debugging)
+        if hasattr(model, 'active_adapters'):
+            logger.info(f"Active adapters: {model.active_adapters}")
+        if hasattr(model, 'peft_config'):
+            logger.info(f"PEFT config keys: {list(model.peft_config.keys())}")
+            
+        initial_eval = trainer.evaluate(test_dataset)
+        logger.info(f"Initial evaluation after checkpoint loading: {initial_eval}")
+    else:
+        logger.info("No checkpoint provided, starting fresh training")
+
     ######################################################################
     # 5. Train & push to the Hub
     # -------------------------------------------------------------------
     logger.info("Starting training")
+    if args.checkpoint:
+        logger.info(f"Resuming training from checkpoint: {args.checkpoint}")
     trainer.train()
     logger.info("Training complete")
     
@@ -248,6 +297,34 @@ if __name__ == "__main__":
     logger.info("Saving final model")
     final_model_path = os.path.join(args.output_dir, "final_model")
     trainer.save_model(final_model_path)
+    
+    # Also save the full model state including classification head for PEFT models
+    if hasattr(model, 'peft_config'):
+        logger.info("Saving full model state for PEFT model...")
+        full_model_path = os.path.join(final_model_path, "full_model_state.pt")
+        
+        # Save the complete model state dict including classification head
+        full_state_dict = {}
+        for name, param in model.named_parameters():
+            full_state_dict[name] = param.data.clone()
+        
+        torch.save(full_state_dict, full_model_path)
+        logger.info(f"Full model state saved to {full_model_path}")
+        
+        # Save important model metadata
+        model_metadata = {
+            "num_labels": len(label_names),
+            "label_names": label_names,
+            "lora_rank": args.lora_rank,
+            "lora_alpha": args.lora_alpha,
+            "base_model": "facebook/dinov2-base-imagenet1k-1-layer"
+        }
+        
+        metadata_path = os.path.join(final_model_path, "model_metadata.json")
+        with open(metadata_path, "w") as f:
+            json.dump(model_metadata, f, indent=2)
+        logger.info(f"Model metadata saved to {metadata_path}")
+    
     logger.info(f"Final model saved to {final_model_path}")
     
     # Save the label names for future reference
