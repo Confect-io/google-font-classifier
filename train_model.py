@@ -12,51 +12,10 @@ from transformers import (
     AutoImageProcessor,
     Dinov2ForImageClassification,
     Trainer,
-    TrainerCallback,
     TrainingArguments,
 )
 
 logger = logging.getLogger(__name__)
-
-class EnhancedCheckpointCallback(TrainerCallback):
-    """Custom callback to save enhanced PEFT checkpoints with full model state"""
-    
-    def __init__(self, label_names, args):
-        self.label_names = label_names
-        self.args = args
-    
-    def on_save(self, args, state, control, model=None, **kwargs):
-        """Called whenever a checkpoint is saved"""
-        if model is not None and hasattr(model, 'peft_config'):
-            checkpoint_dir = os.path.join(args.output_dir, f"checkpoint-{state.global_step}")
-            logger.info(f"Saving enhanced checkpoint to {checkpoint_dir}")
-            
-            # Save the full model state including classification head
-            full_model_path = os.path.join(checkpoint_dir, "full_model_state.pt")
-            
-            # Save the complete model state dict including classification head
-            full_state_dict = {}
-            for name, param in model.named_parameters():
-                full_state_dict[name] = param.data.clone()
-            
-            torch.save(full_state_dict, full_model_path)
-            logger.info(f"Full model state saved to {full_model_path}")
-            
-            # Save important model metadata
-            model_metadata = {
-                "num_labels": len(self.label_names),
-                "label_names": self.label_names,
-                "lora_rank": self.args.lora_rank,
-                "lora_alpha": self.args.lora_alpha,
-                "base_model": "facebook/dinov2-base-imagenet1k-1-layer",
-                "global_step": state.global_step,
-                "epoch": state.epoch,
-            }
-            
-            metadata_path = os.path.join(checkpoint_dir, "model_metadata.json")
-            with open(metadata_path, "w") as f:
-                json.dump(model_metadata, f, indent=2)
-            logger.info(f"Model metadata saved to {metadata_path}")
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a DINOv2 model for font classification')
@@ -99,8 +58,6 @@ if __name__ == "__main__":
     )
     
     ######################################################################
-    # 1. Load your cropped‑font dataset
-    # -------------------------------------------------------------------
     # Directory layout expected by ImageFolder:
     #   fonts/
     #     ├─ Arial/
@@ -124,18 +81,13 @@ if __name__ == "__main__":
     
     logger.info(f"Train size: {len(dataset['train'])}, Validation size: {len(dataset['test'])}")
 
-    ######################################################################
-    # 2. Pre‑processing & augmentation
-    # -------------------------------------------------------------------
     logger.info("Setting up image processor and augmentations")
     processor   = AutoImageProcessor.from_pretrained("facebook/dinov2-base-imagenet1k-1-layer")  # 224 px
     size        = processor.size["shortest_edge"]            # 224 by default
     normalize   = T.Normalize(mean=processor.image_mean, std=processor.image_std)
 
-    # Convert grayscale to RGB first
     to_rgb = T.Lambda(lambda img: img.convert('RGB'))
  
-    # Define padding transform to ensure square images
     def pad_to_square(img):
         w, h = img.size
         max_size = max(w, h)
@@ -145,16 +97,16 @@ if __name__ == "__main__":
         return T.Pad(padding, fill=0)(img)
 
     train_aug   = T.Compose([
-        to_rgb,  # Convert to RGB first
-        pad_to_square,  # Pad to square
-        T.Resize(size),  # Resize to target size
+        to_rgb,
+        pad_to_square,
+        T.Resize(size),
         T.ToTensor(), 
         normalize,
     ])
     val_aug     = T.Compose([
-        to_rgb,  # Convert to RGB first
-        pad_to_square,  # Pad to square
-        T.Resize(size),  # Resize to target size
+        to_rgb,
+        pad_to_square,
+        T.Resize(size),
         T.ToTensor(), 
         normalize
     ])
@@ -162,12 +114,9 @@ if __name__ == "__main__":
     def transform(example, train=True):
         # The dataset uses 'image' as the key for PIL images
         example["pixel_values"] = train_aug(example["image"]) if train else val_aug(example["image"])
-        # The label is already set by the ImageFolder dataset loader
         return example
 
-    # Apply transformations to all splits
     logger.info("Applying data transformations")
-    # Create new datasets with transformations
     train_dataset = dataset["train"].map(
         lambda x: transform(x, train=True),
         remove_columns=["image"],
@@ -185,22 +134,17 @@ if __name__ == "__main__":
     
     logger.info("Data preprocessing complete")
 
-    ######################################################################
-    # 3. Load DINO v2 and (optionally) add LoRA adapters
-    # -------------------------------------------------------------------
     logger.info("Loading DINOv2 model")
     
-    # First load the model without the classification head
-    model = Dinov2ForImageClassification.from_pretrained(
+    base = Dinov2ForImageClassification.from_pretrained(
             "facebook/dinov2-base-imagenet1k-1-layer",
             num_labels=len(label_names),
             ignore_mismatched_sizes=True,
         )
 
-    # --- parameter‑efficient fine‑tune (comment out for full FT) ---
     logger.info("Configuring LoRA adapters")
     peft_cfg = LoraConfig(
-        r             = args.lora_rank,          # rank
+        r             = args.lora_rank,
         lora_alpha    = args.lora_alpha,
         target_modules = ["query", "value"],  # Q & V proj in ViT blocks
         lora_dropout  = args.lora_dropout,
@@ -208,49 +152,17 @@ if __name__ == "__main__":
         modules_to_save = ["classifier"],  # IMPORTANT: Save classification head too!
     )
 
-    # Handle checkpoint loading properly
-    checkpoint_for_trainer = None
     if args.checkpoint:
-        logger.info(f"Loading checkpoint: {args.checkpoint}")
-                
-        # Check if it's a PEFT checkpoint with adapter weights
-        adapter_path = os.path.join(args.checkpoint, "adapter_model.safetensors")
-        if not os.path.exists(adapter_path):
-            raise FileNotFoundError(f"PEFT checkpoint not found at {adapter_path}")
-        
-        logger.info("Found PEFT checkpoint...")
-        
-        # Check if we have enhanced checkpoint with full model state
-        full_model_path = os.path.join(args.checkpoint, "full_model_state.pt")
-        metadata_path = os.path.join(args.checkpoint, "model_metadata.json")
-        
-        if not (os.path.exists(full_model_path) and os.path.exists(metadata_path)):
-            raise FileNotFoundError(f"Enhanced checkpoint not found at {full_model_path} or {metadata_path}")
-    
-        logger.info("Found enhanced checkpoint with full model state!")
-        
-        # Load metadata and full state
-        with open(metadata_path, "r") as f:
-            metadata = json.load(f)
-        
-        if metadata["num_labels"] != len(label_names):
-            raise ValueError(f"Label count mismatch: checkpoint has {metadata['num_labels']}, current dataset has {len(label_names)}")
-
-        model = get_peft_model(model, peft_cfg)
-        full_state_dict = torch.load(full_model_path, map_location="cpu")
-        model.load_state_dict(full_state_dict, strict=False)
-        logger.info("Enhanced checkpoint loaded successfully!")
-
-        checkpoint_for_trainer = args.checkpoint
+        model  = PeftModel.from_pretrained(
+                 base,
+                 args.checkpoint,
+                 is_trainable=True
+             )
     else:
-        # No checkpoint
-        model = get_peft_model(model, peft_cfg)
-
+        model  = get_peft_model(base, peft_cfg)        # fresh LoRA wrap
+    
     model.print_trainable_parameters()
 
-    ######################################################################
-    # 4. Define Trainer
-    # -------------------------------------------------------------------
     def collate(batch):
         # The transform function has already converted images to tensors and stored them in pixel_values
         pixel_values = torch.stack([item["pixel_values"] for item in batch])
@@ -293,7 +205,7 @@ if __name__ == "__main__":
         metric_for_best_model = "eval_accuracy",
         greater_is_better = True,
         # Pass the actual checkpoint path for proper resumption
-        resume_from_checkpoint = checkpoint_for_trainer,
+        resume_from_checkpoint = args.checkpoint if args.checkpoint else None,
     )
 
     trainer = Trainer(
@@ -303,27 +215,16 @@ if __name__ == "__main__":
         eval_dataset    = test_dataset,
         data_collator   = collate,
         compute_metrics = compute_metrics,
-        callbacks       = [EnhancedCheckpointCallback(label_names, args)],  # Saves full model state at each checkpoint
     )
 
-    # If loading from checkpoint, evaluate immediately to verify the model state
     if args.checkpoint:
         logger.info("Evaluating model immediately after checkpoint loading to verify state...")
-        
-        # Check which adapter is active (for debugging)
-        if hasattr(model, 'active_adapters'):
-            logger.info(f"Active adapters: {model.active_adapters}")
-        if hasattr(model, 'peft_config'):
-            logger.info(f"PEFT config keys: {list(model.peft_config.keys())}")
-            
         initial_eval = trainer.evaluate(test_dataset)
         logger.info(f"Initial evaluation after checkpoint loading: {initial_eval}")
     else:
         logger.info("No checkpoint provided, starting fresh training")
 
-    ######################################################################
-    # 5. Train & push to the Hub
-    # -------------------------------------------------------------------
+
     logger.info("Starting training")
     if args.checkpoint:
         logger.info(f"Resuming training from checkpoint: {args.checkpoint}")
