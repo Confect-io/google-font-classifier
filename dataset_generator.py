@@ -23,6 +23,24 @@ ASCII_CHARS = (
     "0123456789"
 )
 
+FONT_ALLOWLIST = [
+"Inter",
+"Poppins",
+"Arial",
+"Roboto",
+"InstrumentSans",
+"InstrumentSerif",
+"TimesNewRoman",
+"Baskerville",
+"PTSerif",
+"LibreCaslonText",
+"PermanentMarker",
+"PinyonScript",
+"Gluten",
+"MeowScript",
+"PatrickHand",
+]
+
 def char_set(name: str) -> str:
     if name == "ascii":
         return ASCII_CHARS
@@ -85,8 +103,11 @@ def build_dataset(font_dir, out_dir, chars, font_size, img_size, padding, no_clo
     test_dir.mkdir(parents=True, exist_ok=True)
 
     font_paths = list(font_dir.rglob("*.ttf")) + list(font_dir.rglob("*.otf"))
+    font_paths = [font_path for font_path in font_paths if font_path.stem.split("[")[0].split("-")[0] in FONT_ALLOWLIST]
     if not font_paths:
         sys.exit(f"No font files found under {font_dir!s}")
+
+    logger.info(f"Found {len(font_paths)} font files: {font_paths}")
 
     failed_fonts = []
 
@@ -135,7 +156,9 @@ def build_dataset(font_dir, out_dir, chars, font_size, img_size, padding, no_clo
             continue
 
         logging.info(f"Processed {len(chars)} glyphs for {font_path.stem}")
-    logging.warning(f"Failed to process {len(failed_fonts)} fonts: {failed_fonts}")
+    
+    if failed_fonts:
+        logging.warning(f"Failed to process {len(failed_fonts)} fonts: {failed_fonts}")
 
 def cli():
     ap = argparse.ArgumentParser(description="Crop glyphs for DINO v2 fine‑tuning")
