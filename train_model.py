@@ -235,5 +235,3 @@ if __name__ == "__main__":
     logger.info("Evaluating on test set")
     test_results = trainer.evaluate(test_dataset)
     logger.info(f"Test results: {test_results}")
-    
-    # trainer.push_to_hub("your‑username/dinov2-font‑classifier")
