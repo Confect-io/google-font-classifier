@@ -29,7 +29,7 @@ source myEnv/bin/activate
 Then, install the packages
 
 ```
-python3 -m pip install tqdm pillow
+python3 -m pip install tqdm pillow fontTools
 ```
 
 3. Clean the dataset:
