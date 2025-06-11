@@ -1,4 +1,5 @@
 import argparse
+import json
 import logging
 import os
 
@@ -206,12 +207,12 @@ if __name__ == "__main__":
         eval_strategy      = "steps",
         eval_steps         = 50,
         save_strategy      = "steps",
-        save_steps         = 500,
+        save_steps         = 100,
         num_train_epochs   = args.epochs,
         learning_rate      = args.learning_rate,
         weight_decay       = 0.05,
         fp16               = device.type == "cuda",
-        save_total_limit   = 2,
+        save_total_limit   = 3,
         logging_dir        = os.path.join(args.output_dir, "logs"),
         logging_steps      = 10,
         report_to          = "tensorboard",
@@ -250,7 +251,6 @@ if __name__ == "__main__":
     logger.info(f"Final model saved to {final_model_path}")
     
     # Save the label names for future reference
-    import json
     label_mapping = {i: label for i, label in enumerate(label_names)}
     with open(os.path.join(final_model_path, "label_mapping.json"), "w") as f:
         json.dump(label_mapping, f, indent=2)
