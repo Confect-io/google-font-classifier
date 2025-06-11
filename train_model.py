@@ -77,7 +77,13 @@ if __name__ == "__main__":
         data_dir=args.data_dir,
     )
     
-    logger.info(f"Train size: {len(dataset['train'])}, Test size: {len(dataset['test'])}")
+    # Split the training data into train and validation sets
+    train_val_dataset = dataset["train"].train_test_split(test_size=args.test_size, seed=args.seed)
+    train_dataset = train_val_dataset["train"]
+    val_dataset = train_val_dataset["test"]
+    test_dataset = dataset["test"]
+    
+    logger.info(f"Train size: {len(train_dataset)}, Validation size: {len(val_dataset)}, Test size: {len(test_dataset)}")
 
     ######################################################################
     # 2. Pre‑processing & augmentation
@@ -120,15 +126,20 @@ if __name__ == "__main__":
         # The label is already set by the ImageFolder dataset loader
         return example
 
-    # Apply transformations to both splits
+    # Apply transformations to all splits
     logger.info("Applying data transformations")
     # Create new datasets with transformations
-    train_dataset = dataset["train"].map(
+    train_dataset = train_dataset.map(
         lambda x: transform(x, train=True),
         remove_columns=["image"],
         desc="Transforming training data"
     )
-    test_dataset = dataset["test"].map(
+    val_dataset = val_dataset.map(
+        lambda x: transform(x, train=False),
+        remove_columns=["image"],
+        desc="Transforming validation data"
+    )
+    test_dataset = test_dataset.map(
         lambda x: transform(x, train=False),
         remove_columns=["image"],
         desc="Transforming test data"
@@ -136,6 +147,7 @@ if __name__ == "__main__":
     
     # Set the format to torch tensors
     train_dataset.set_format(type="torch", columns=["pixel_values", "label"])
+    val_dataset.set_format(type="torch", columns=["pixel_values", "label"])
     test_dataset.set_format(type="torch", columns=["pixel_values", "label"])
     
     logger.info("Data preprocessing complete")
@@ -173,6 +185,13 @@ if __name__ == "__main__":
         labels = torch.tensor([item["label"] for item in batch])
         return {"pixel_values": pixel_values, "labels": labels}
 
+    # Add compute_metrics function for accuracy calculation
+    def compute_metrics(eval_pred):
+        predictions, labels = eval_pred
+        predictions = predictions.argmax(axis=-1)
+        accuracy = (predictions == labels).mean()
+        return {"accuracy": accuracy}
+
     logger.info("Setting up training arguments")
     # Check if we're on MPS (Apple Silicon)
     device = torch.device("mps" if torch.backends.mps.is_available() else "cuda" if torch.cuda.is_available() else "cpu")
@@ -182,24 +201,34 @@ if __name__ == "__main__":
         output_dir          = args.output_dir,
         per_device_train_batch_size = args.batch_size,
         per_device_eval_batch_size  = args.batch_size,
-        eval_steps                 = 500,  # Evaluate every 500 steps
-        save_steps                = 500,  # Save checkpoint every 500 steps
-        num_train_epochs          = args.epochs,
-        learning_rate             = args.learning_rate,
-        weight_decay              = 0.05,
-        fp16                      = device.type == "cuda",  # Only use fp16 on CUDA devices
-        save_total_limit          = 2,
-        logging_dir               = os.path.join(args.output_dir, "logs"),
-        logging_steps             = 10,
-        report_to                 = "tensorboard",
+        # Tell Trainer which key in each batch holds the ground‑truth labels.
+        # Without it (especially with PEFT/LoRA wrappers), Trainer thinks there
+        # are no labels, skips compute_metrics, and never logs eval_accuracy.
+        label_names=["labels"],
+        eval_strategy      = "steps",
+        eval_steps         = 50,
+        save_strategy      = "steps",
+        save_steps         = 500,
+        num_train_epochs   = args.epochs,
+        learning_rate      = args.learning_rate,
+        weight_decay       = 0.05,
+        fp16               = device.type == "cuda",
+        save_total_limit   = 2,
+        logging_dir        = os.path.join(args.output_dir, "logs"),
+        logging_steps      = 10,
+        report_to          = "tensorboard",
+        load_best_model_at_end = True,
+        metric_for_best_model = "eval_accuracy",
+        greater_is_better = True,
     )
 
     trainer = Trainer(
         model           = model,
         args            = training_args,
         train_dataset   = train_dataset,
-        eval_dataset    = test_dataset,
+        eval_dataset    = val_dataset,
         data_collator   = collate,
+        compute_metrics = compute_metrics,
     )
 
     ######################################################################
@@ -208,4 +237,9 @@ if __name__ == "__main__":
     logger.info("Starting training")
     trainer.train()
     logger.info("Training complete")
+    
+    # Evaluate on test set after training
+    logger.info("Evaluating on test set")
+    test_results = trainer.evaluate(test_dataset)
+    logger.info(f"Test results: {test_results}")
     # trainer.push_to_hub("your‑username/dinov2-font‑classifier")
