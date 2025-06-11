@@ -12,10 +12,51 @@ from transformers import (
     AutoImageProcessor,
     Dinov2ForImageClassification,
     Trainer,
+    TrainerCallback,
     TrainingArguments,
 )
 
 logger = logging.getLogger(__name__)
+
+class EnhancedCheckpointCallback(TrainerCallback):
+    """Custom callback to save enhanced PEFT checkpoints with full model state"""
+    
+    def __init__(self, label_names, args):
+        self.label_names = label_names
+        self.args = args
+    
+    def on_save(self, args, state, control, model=None, **kwargs):
+        """Called whenever a checkpoint is saved"""
+        if model is not None and hasattr(model, 'peft_config'):
+            checkpoint_dir = os.path.join(args.output_dir, f"checkpoint-{state.global_step}")
+            logger.info(f"Saving enhanced checkpoint to {checkpoint_dir}")
+            
+            # Save the full model state including classification head
+            full_model_path = os.path.join(checkpoint_dir, "full_model_state.pt")
+            
+            # Save the complete model state dict including classification head
+            full_state_dict = {}
+            for name, param in model.named_parameters():
+                full_state_dict[name] = param.data.clone()
+            
+            torch.save(full_state_dict, full_model_path)
+            logger.info(f"Full model state saved to {full_model_path}")
+            
+            # Save important model metadata
+            model_metadata = {
+                "num_labels": len(self.label_names),
+                "label_names": self.label_names,
+                "lora_rank": self.args.lora_rank,
+                "lora_alpha": self.args.lora_alpha,
+                "base_model": "facebook/dinov2-base-imagenet1k-1-layer",
+                "global_step": state.global_step,
+                "epoch": state.epoch,
+            }
+            
+            metadata_path = os.path.join(checkpoint_dir, "model_metadata.json")
+            with open(metadata_path, "w") as f:
+                json.dump(model_metadata, f, indent=2)
+            logger.info(f"Model metadata saved to {metadata_path}")
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a DINOv2 model for font classification')
@@ -239,7 +280,7 @@ if __name__ == "__main__":
         eval_strategy      = "steps",
         eval_steps         = 50,
         save_strategy      = "steps",
-        save_steps         = 100,
+        save_steps         = 50,
         num_train_epochs   = args.epochs,
         learning_rate      = args.learning_rate,
         weight_decay       = 0.05,
@@ -262,6 +303,7 @@ if __name__ == "__main__":
         eval_dataset    = test_dataset,
         data_collator   = collate,
         compute_metrics = compute_metrics,
+        callbacks       = [EnhancedCheckpointCallback(label_names, args)],  # Saves full model state at each checkpoint
     )
 
     # If loading from checkpoint, evaluate immediately to verify the model state
@@ -292,45 +334,5 @@ if __name__ == "__main__":
     logger.info("Evaluating on test set")
     test_results = trainer.evaluate(test_dataset)
     logger.info(f"Test results: {test_results}")
-
-    # Save the final model
-    logger.info("Saving final model")
-    final_model_path = os.path.join(args.output_dir, "final_model")
-    trainer.save_model(final_model_path)
-    
-    # Also save the full model state including classification head for PEFT models
-    if hasattr(model, 'peft_config'):
-        logger.info("Saving full model state for PEFT model...")
-        full_model_path = os.path.join(final_model_path, "full_model_state.pt")
-        
-        # Save the complete model state dict including classification head
-        full_state_dict = {}
-        for name, param in model.named_parameters():
-            full_state_dict[name] = param.data.clone()
-        
-        torch.save(full_state_dict, full_model_path)
-        logger.info(f"Full model state saved to {full_model_path}")
-        
-        # Save important model metadata
-        model_metadata = {
-            "num_labels": len(label_names),
-            "label_names": label_names,
-            "lora_rank": args.lora_rank,
-            "lora_alpha": args.lora_alpha,
-            "base_model": "facebook/dinov2-base-imagenet1k-1-layer"
-        }
-        
-        metadata_path = os.path.join(final_model_path, "model_metadata.json")
-        with open(metadata_path, "w") as f:
-            json.dump(model_metadata, f, indent=2)
-        logger.info(f"Model metadata saved to {metadata_path}")
-    
-    logger.info(f"Final model saved to {final_model_path}")
-    
-    # Save the label names for future reference
-    label_mapping = {i: label for i, label in enumerate(label_names)}
-    with open(os.path.join(final_model_path, "label_mapping.json"), "w") as f:
-        json.dump(label_mapping, f, indent=2)
-    logger.info("Label mapping saved")
     
     # trainer.push_to_hub("your‑username/dinov2-font‑classifier")
