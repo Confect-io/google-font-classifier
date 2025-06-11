@@ -77,13 +77,7 @@ if __name__ == "__main__":
         data_dir=args.data_dir,
     )
     
-    # Split the training data into train and validation sets
-    train_val_dataset = dataset["train"].train_test_split(test_size=args.test_size, seed=args.seed)
-    train_dataset = train_val_dataset["train"]
-    val_dataset = train_val_dataset["test"]
-    test_dataset = dataset["test"]
-    
-    logger.info(f"Train size: {len(train_dataset)}, Validation size: {len(val_dataset)}, Test size: {len(test_dataset)}")
+    logger.info(f"Train size: {len(dataset['train'])}, Validation size: {len(dataset['test'])}")
 
     ######################################################################
     # 2. Pre‑processing & augmentation
@@ -95,7 +89,7 @@ if __name__ == "__main__":
 
     # Convert grayscale to RGB first
     to_rgb = T.Lambda(lambda img: img.convert('RGB'))
-
+ 
     # Define padding transform to ensure square images
     def pad_to_square(img):
         w, h = img.size
@@ -129,17 +123,12 @@ if __name__ == "__main__":
     # Apply transformations to all splits
     logger.info("Applying data transformations")
     # Create new datasets with transformations
-    train_dataset = train_dataset.map(
+    train_dataset = dataset["train"].map(
         lambda x: transform(x, train=True),
         remove_columns=["image"],
         desc="Transforming training data"
     )
-    val_dataset = val_dataset.map(
-        lambda x: transform(x, train=False),
-        remove_columns=["image"],
-        desc="Transforming validation data"
-    )
-    test_dataset = test_dataset.map(
+    test_dataset = dataset["test"].map(
         lambda x: transform(x, train=False),
         remove_columns=["image"],
         desc="Transforming test data"
@@ -147,7 +136,6 @@ if __name__ == "__main__":
     
     # Set the format to torch tensors
     train_dataset.set_format(type="torch", columns=["pixel_values", "label"])
-    val_dataset.set_format(type="torch", columns=["pixel_values", "label"])
     test_dataset.set_format(type="torch", columns=["pixel_values", "label"])
     
     logger.info("Data preprocessing complete")
@@ -226,7 +214,7 @@ if __name__ == "__main__":
         model           = model,
         args            = training_args,
         train_dataset   = train_dataset,
-        eval_dataset    = val_dataset,
+        eval_dataset    = test_dataset,
         data_collator   = collate,
         compute_metrics = compute_metrics,
     )
