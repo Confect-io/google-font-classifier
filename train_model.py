@@ -21,6 +21,8 @@ def parse_args():
                       help='Directory containing the font dataset')
     parser.add_argument('--output_dir', type=str, default='dinov2-fonts',
                       help='Directory to save the model')
+    parser.add_argument('--checkpoint', type=str, default=None,
+                      help='Path to checkpoint to resume training from')
     parser.add_argument('--batch_size', type=int, default=32,
                       help='Training and evaluation batch size')
     parser.add_argument('--epochs', type=int, default=10,
@@ -146,11 +148,19 @@ if __name__ == "__main__":
     logger.info("Loading DINOv2 model")
     
     # First load the model without the classification head
-    model = Dinov2ForImageClassification.from_pretrained(
-        "facebook/dinov2-base-imagenet1k-1-layer",
-        num_labels=len(label_names),
-        ignore_mismatched_sizes=True,  # Ignore the classification head size mismatch
-    )
+    if args.checkpoint:
+        logger.info(f"Loading from checkpoint: {args.checkpoint}")
+        model = Dinov2ForImageClassification.from_pretrained(
+            args.checkpoint,
+            num_labels=len(label_names),
+            ignore_mismatched_sizes=True,
+        )
+    else:
+        model = Dinov2ForImageClassification.from_pretrained(
+            "facebook/dinov2-base-imagenet1k-1-layer",
+            num_labels=len(label_names),
+            ignore_mismatched_sizes=True,
+        )
 
     # --- parameter‑efficient fine‑tune (comment out for full FT) ---
     logger.info("Configuring LoRA adapters")
@@ -208,6 +218,8 @@ if __name__ == "__main__":
         load_best_model_at_end = True,
         metric_for_best_model = "eval_accuracy",
         greater_is_better = True,
+        # Add resume from checkpoint support
+        resume_from_checkpoint = args.checkpoint is not None,
     )
 
     trainer = Trainer(
