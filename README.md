@@ -60,3 +60,18 @@ python train_model.py \
     --lora_alpha 16 \
     --lora_dropout 0.1 \
 ```
+
+5. Checkpoints and final model results will be saved in the output directory:
+
+```
+$ ls dinov2-fonts-with-subfonts
+checkpoint-2500 checkpoint-2752 logs
+```
+
+The outputs include the LoRA weights and classification head weights, so training from a checkpoint is equivalent to continuing training from the checkpoint state: 
+
+```
+python train_model.py \
+    --checkpoint dinov2-fonts-with-subfonts/checkpoint-2752 \
+    ...
+```
