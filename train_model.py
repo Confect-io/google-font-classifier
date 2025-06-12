@@ -146,7 +146,7 @@ if __name__ == "__main__":
 
     logger.info("Configuring LoRA adapters")
     peft_cfg = LoraConfig(
-        task_type     = "IMAGE_CLASSIFICATION",
+        task_type     = "SEQ_CLS",
         r             = args.lora_rank,
         lora_alpha    = args.lora_alpha,
         target_modules = ["query", "value"],  # Q & V proj in ViT blocks
