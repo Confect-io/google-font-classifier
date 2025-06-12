@@ -71,13 +71,15 @@ if __name__ == "__main__":
     #     └─ ...
 
     logger.info(f"Loading dataset from {args.data_dir}")
-    # Get label names from directory names
-    label_names = os.listdir(f"{args.data_dir}/train")
+    # Get label names from directory names and sort them alphabetically
+    # to match the order used by the imagefolder dataset loader
+    label_names = sorted(os.listdir(f"{args.data_dir}/train"))
     logger.info(f"Found {len(label_names)} labels")
 
     if len(label_names) <= 1:
         raise ValueError(f"Expected at least 2 labels, got {label_names=}, imagefolder will not label the dataset if there are less than 2 labels.")
 
+    # READ: the label ids assigned are in alphbetical order.
     dataset = load_dataset(
         "imagefolder",
         data_dir=args.data_dir,
