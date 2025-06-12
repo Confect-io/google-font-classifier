@@ -243,6 +243,12 @@ if __name__ == "__main__":
         with tempfile.TemporaryDirectory() as tmp:
             # Merge the PEFT weights into the base model so that we upload an independent complete model.
             merged = trainer.model.merge_and_unload()
+            id2label = {i: name for i, name in enumerate(label_names)}
+            label2id = {name: i for i, name in enumerate(label_names)}
+
+            merged.config.id2label = id2label
+            merged.config.label2id = label2id
+            merged.config.pipeline_tag = "image-classification"
             merged.save_pretrained(tmp, safe_serialization=True)
             processor.save_pretrained(tmp)
 

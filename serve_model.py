@@ -7,11 +7,7 @@ from PIL import Image
 from transformers import AutoImageProcessor, Dinov2ForImageClassification
 
 if __name__ == "__main__":
-    # Load the base model and PEFT adapter
-    ### TODO how can we embed the label names into the model? 
-    label_names = os.listdir("glyphs224_with_subfonts/train")
     model = Dinov2ForImageClassification.from_pretrained("dchen0/font-classifier",
-                                                              num_labels=len(label_names),
                                                               ignore_mismatched_sizes=True,
                                                               )
     
@@ -40,6 +36,7 @@ if __name__ == "__main__":
 
 
     # Get prediction probabilities
+    label_names = model.config.id2label
     probabilities = torch.nn.functional.softmax(logits, dim=-1)
     top_5_predictions = [label_names[i] for i in torch.topk(logits, k=5).indices.tolist()[0]]
     top_5_confidences = [probabilities[0][i].item() for i in torch.topk(logits, k=5).indices.tolist()[0]]
