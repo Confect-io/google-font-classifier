@@ -32,6 +32,18 @@ Then, install the packages
 python3 -m pip install tqdm pillow fontTools
 ```
 
+You can upload the dataset to huggingface as follows:
+
+```
+huggingface-cli upload-large-folder dchen0/font_crops glyphs224_with_subfonts --repo-type=dataset
+```
+
+To get huggingface-cli, run
+
+```
+pip install -U "huggingface_hub[cli]"
+```
+
 3. Clean the dataset:
 ```
 python dataset_cleaner.py glyphs224
