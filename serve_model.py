@@ -16,7 +16,7 @@ if __name__ == "__main__":
                                                               )
     
     # Load the image processor
-    processor = AutoImageProcessor.from_pretrained("facebook/dinov2-base-imagenet1k-1-layer")
+    processor = AutoImageProcessor.from_pretrained("dchen0/font-classifier")
     
     # Set model to evaluation mode
     model.eval()
