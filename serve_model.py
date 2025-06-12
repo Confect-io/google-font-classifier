@@ -10,15 +10,10 @@ if __name__ == "__main__":
     # Load the base model and PEFT adapter
     ### TODO how can we embed the label names into the model? 
     label_names = os.listdir("glyphs224_with_subfonts/train")
-    ## TODO dedupe the two lines below, similar to train_model.py
-    base_model = Dinov2ForImageClassification.from_pretrained("facebook/dinov2-base-imagenet1k-1-layer",
+    model = Dinov2ForImageClassification.from_pretrained("dchen0/font-classifier",
                                                               num_labels=len(label_names),
                                                               ignore_mismatched_sizes=True,
                                                               )
-    model = PeftModel.from_pretrained(base_model, "dchen0/font-classifier", is_trainable=False)
-    
-    # Merge the PEFT weights into the base model for inference
-    model = model.merge_and_unload()
     
     # Load the image processor
     processor = AutoImageProcessor.from_pretrained("facebook/dinov2-base-imagenet1k-1-layer")
