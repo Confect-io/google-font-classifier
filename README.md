@@ -32,6 +32,15 @@ Then, install the packages
 python3 -m pip install tqdm pillow fontTools
 ```
 
+3. Clean the dataset:
+```
+python dataset_cleaner.py glyphs224
+```
+
+This will print any bad image paths that you can manually inspect and remove (in expectation, only 1/225000 should be malformed).
+
+4. Upload the dataset (optional):
+
 You can upload the dataset to huggingface as follows:
 
 ```
@@ -44,14 +53,7 @@ To get huggingface-cli, run
 pip install -U "huggingface_hub[cli]"
 ```
 
-3. Clean the dataset:
-```
-python dataset_cleaner.py glyphs224
-```
-
-This will print any bad image paths that you can manually inspect and remove (in expectation, only 1/225000 should be malformed).
-
-4. Train the model:
+5. Train the model:
 
 To get the packages needed, make sure you have a venv (see above) and then get the packages:
 
@@ -73,7 +75,9 @@ python train_model.py \
     --lora_dropout 0.1 \
 ```
 
-5. Checkpoints and final model results will be saved in the output directory:
+6. You can continue training where you left off.
+
+Checkpoints and final model results will be saved in the output directory:
 
 ```
 $ ls dinov2-fonts-with-subfonts
@@ -89,7 +93,7 @@ python train_model.py \
 ```
 
 
-6. To upload your model, you can start from a checkpoint and train with 0 epochs i.e. skip training. This way the training code can inflate the checkpoint into model state. Then, pass the huggingface_model_name parameter.:
+7. To upload your model, you can start from a checkpoint and train with 0 epochs i.e. skip training. This way the training code can inflate the checkpoint into model state. Then, pass the huggingface_model_name parameter.:
 
 ```
 python train_model.py \
@@ -98,7 +102,7 @@ python train_model.py \
     --huggingface_model_name your-user-name/your-model-name
 ```
 
-7. To serve the model from Huggingface, you can use the serve_model.py script on an image
+8. To serve the model from Huggingface, you can use the serve_model.py script on an image
 
 ```
 python serve_model.py some_image.png
