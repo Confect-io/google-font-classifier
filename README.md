@@ -102,6 +102,12 @@ python train_model.py \
     --huggingface_model_name your-user-name/your-model-name
 ```
 
+You can modify the model repo via git:
+
+```
+git clone https://huggingface.co/dchen0/font-classifier
+```
+
 8. To serve the model from Huggingface, you can use the serve_model.py script on an image
 
 ```
