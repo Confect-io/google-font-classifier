@@ -19,9 +19,9 @@ logger = logging.getLogger(__name__)
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a DINOv2 model for font classification')
-    parser.add_argument('--data_dir', type=str, default='fonts',
+    parser.add_argument('--data_dir', type=str, default=None,
                       help='Directory containing the font dataset')
-    parser.add_argument('--output_dir', type=str, default='dinov2-fonts',
+    parser.add_argument('--output_dir', type=str, default=None,
                       help='Directory to save the model')
     parser.add_argument('--checkpoint', type=str, default=None,
                       help='Path to checkpoint to resume training from')
@@ -44,6 +44,8 @@ def parse_args():
     parser.add_argument('--log_level', type=str, default='INFO',
                       choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
                       help='Logging level')
+    parser.add_argument('--huggingface_model_name', type=str, default=None,
+                      help='Name of the model to push to the Hub')
     return parser.parse_args()
 
 
@@ -144,6 +146,7 @@ if __name__ == "__main__":
 
     logger.info("Configuring LoRA adapters")
     peft_cfg = LoraConfig(
+        task_type     = "IMAGE_CLASSIFICATION",
         r             = args.lora_rank,
         lora_alpha    = args.lora_alpha,
         target_modules = ["query", "value"],  # Q & V proj in ViT blocks
@@ -198,7 +201,7 @@ if __name__ == "__main__":
         weight_decay       = 0.05,
         fp16               = device.type == "cuda",
         save_total_limit   = 3,
-        logging_dir        = os.path.join(args.output_dir, "logs"),
+        logging_dir        = os.path.join(args.output_dir, "logs") if args.output_dir else None,
         logging_steps      = 10,
         report_to          = "tensorboard",
         load_best_model_at_end = True,
@@ -235,3 +238,16 @@ if __name__ == "__main__":
     logger.info("Evaluating on test set")
     test_results = trainer.evaluate(test_dataset)
     logger.info(f"Test results: {test_results}")
+
+    # Saves the result model to the output directory
+    # The reason this is important is if we configure load_best_model_at_end=True,
+    # the best model will be saved out of all checkpoints.
+    # So, even though the trainer already saves the last model as a checkpoint, that one is not necessarily the best.
+    if args.output_dir:
+        logger.info("Saving result model to the output directory")
+        trainer.save_model(f"{args.output_dir}/result_model")
+
+    if args.huggingface_model_name:
+        logger.info(f"Pushing model to the Hub: {args.huggingface_model_name}")
+        trainer.hub_model_id = args.huggingface_model_name
+        trainer.push_to_hub()
