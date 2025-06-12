@@ -75,3 +75,13 @@ python train_model.py \
     --checkpoint dinov2-fonts-with-subfonts/checkpoint-2752 \
     ...
 ```
+
+
+6. To upload your model, you can start from a checkpoint and train with 0 epochs i.e. skip training. This way the training code can inflate the checkpoint into model state. Then, pass the huggingface_model_name parameter.:
+
+```
+python train_model.py \
+    --epochs 0
+    --checkpoint dinov2-fonts-with-subfonts/checkpoint-2752 \
+    --huggingface_model_name your-user-name/your-model-name
+```
