@@ -85,3 +85,9 @@ python train_model.py \
     --checkpoint dinov2-fonts-with-subfonts/checkpoint-2752 \
     --huggingface_model_name your-user-name/your-model-name
 ```
+
+7. To serve the model from Huggingface, you can use the serve_model.py script on an image
+
+```
+python serve_model.py some_image.png
+```
