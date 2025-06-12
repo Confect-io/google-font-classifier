@@ -2,10 +2,12 @@ import argparse
 import json
 import logging
 import os
+import tempfile
 
 import torch
 import torchvision.transforms as T
 from datasets import load_dataset
+from huggingface_hub import HfApi
 from peft import LoraConfig, PeftModel, get_peft_model
 from safetensors import safe_open
 from transformers import (
@@ -27,7 +29,7 @@ def parse_args():
                       help='Path to checkpoint to resume training from')
     parser.add_argument('--batch_size', type=int, default=32,
                       help='Training and evaluation batch size')
-    parser.add_argument('--epochs', type=int, default=10,
+    parser.add_argument('--epochs', type=int, default=1,
                       help='Number of training epochs')
     parser.add_argument('--learning_rate', type=float, default=1e-4,
                       help='Learning rate for training')
@@ -220,25 +222,12 @@ if __name__ == "__main__":
         compute_metrics = compute_metrics,
     )
 
-    if args.checkpoint:
-        logger.info("Evaluating model immediately after checkpoint loading to verify state...")
-        initial_eval = trainer.evaluate(test_dataset)
-        logger.info(f"Initial evaluation after checkpoint loading: {initial_eval}")
-    else:
-        logger.info("No checkpoint provided, starting fresh training")
-
-
     logger.info("Starting training")
     if args.checkpoint:
         logger.info(f"Resuming training from checkpoint: {args.checkpoint}")
     trainer.train()
     logger.info("Training complete")
     
-    # Evaluate on test set after training
-    logger.info("Evaluating on test set")
-    test_results = trainer.evaluate(test_dataset)
-    logger.info(f"Test results: {test_results}")
-
     # Saves the result model to the output directory
     # The reason this is important is if we configure load_best_model_at_end=True,
     # the best model will be saved out of all checkpoints.
@@ -249,5 +238,18 @@ if __name__ == "__main__":
 
     if args.huggingface_model_name:
         logger.info(f"Pushing model to the Hub: {args.huggingface_model_name}")
+
         trainer.hub_model_id = args.huggingface_model_name
-        trainer.push_to_hub()
+
+        with tempfile.TemporaryDirectory() as tmp:
+            # Merge the PEFT weights into the base model so that we upload an independent complete model.
+            merged = trainer.model.merge_and_unload()
+            merged.save_pretrained(tmp, safe_serialization=True)
+            processor.save_pretrained(tmp)
+
+            HfApi().upload_folder(
+                repo_id=args.huggingface_model_name, 
+                folder_path=tmp,
+                commit_message="Add merged model + processor",
+                token=os.environ["HUGGINGFACE_API_KEY"],
+            )
