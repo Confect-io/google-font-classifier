@@ -15,9 +15,6 @@ from tqdm import tqdm
 logger = logging.getLogger(__name__)
 LENGTH_OF_STRINGS = 2
 
-# ---------------------------------------------------------------------
-# helpers
-# ---------------------------------------------------------------------
 ASCII_CHARS = (
     "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     "abcdefghijklmnopqrstuvwxyz"
@@ -54,8 +51,44 @@ def char_set(name: str) -> str:
     return name
 
 def render_and_crop(text: str, font: ImageFont.FreeTypeFont,
-                    font_size: int, padding: int,
+                     padding: int,
                     img_size: int) -> Image.Image:
+    # Generate random background and text colors with sufficient contrast
+    def generate_contrasting_colors():
+        def random_rgb():
+            return (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+        
+        def luminance(color):
+            # Calculate perceived brightness using standard formula
+            r, g, b = color
+            return 0.299 * r + 0.587 * g + 0.114 * b
+        
+        # Generate background color
+        bg_color = random_rgb()
+        bg_luminance = luminance(bg_color)
+        
+        # Generate text color with sufficient contrast
+        min_luminance_diff = 80
+        max_attempts = 50
+        
+        for _ in range(max_attempts):
+            text_color = random_rgb()
+            text_luminance = luminance(text_color)
+            
+            # Check if luminance difference is sufficient
+            if abs(bg_luminance - text_luminance) >= min_luminance_diff:
+                return bg_color, text_color
+        
+        # Fallback: if we can't find a good random contrast, use black/white
+        if bg_luminance < 128:
+            text_color = (255, 255, 255)  # white text on dark background
+        else:
+            text_color = (0, 0, 0)  # black text on light background
+            
+        return bg_color, text_color
+    
+    bg_color, text_color = generate_contrasting_colors()
+    
     # Calculate text dimensions
     left, top, right, bottom = font.getbbox(text)
     text_width = right - left
@@ -65,24 +98,24 @@ def render_and_crop(text: str, font: ImageFont.FreeTypeFont,
     canvas_width = text_width + padding * 2
     canvas_height = text_height + padding * 2
     
-    # Create canvas with white background
-    canvas = Image.new("L", (canvas_width, canvas_height), 255)
+    # Create canvas with random background color
+    canvas = Image.new("RGB", (canvas_width, canvas_height), bg_color)
     draw = ImageDraw.Draw(canvas)
     
     # Calculate text position (centered)
     text_x = canvas_width // 2
     text_y = canvas_height // 2
     
-    # Draw text
+    # Draw text with contrasting color
     draw.text(
         (text_x, text_y),
         text,
-        fill=0,
+        fill=text_color,
         font=font,
         anchor="mm",
     )
     
-    # Find bbox of non-white pixels
+    # Find bbox of non-background pixels
     bbox = canvas.getbbox()
     if not bbox:  # empty glyph
         return None
@@ -97,9 +130,7 @@ def render_and_crop(text: str, font: ImageFont.FreeTypeFont,
     # Resize maintaining aspect ratio
     return glyph.resize((target_width, target_height), Image.Resampling.LANCZOS)
 
-# ---------------------------------------------------------------------
-# main
-# ---------------------------------------------------------------------
+
 def build_dataset(font_dir, out_dir, chars, font_size, img_size, padding, no_clobber):
     font_dir, out_dir = pathlib.Path(font_dir), pathlib.Path(out_dir)
     train_dir, test_dir = out_dir / "train", out_dir / "test"
@@ -138,6 +169,9 @@ def build_dataset(font_dir, out_dir, chars, font_size, img_size, padding, no_clo
                 for i in range(2,10):
                     for _ in range(100):
                         random_string = ''.join(random.choices(chars + ' ', k=i))
+                        # skip all whitespace strings
+                        if all(char in ' \n\t' for char in random_string):
+                            continue
                         strings_to_generate.append(random_string)
 
                 def generate_image_for_string(string: str, font: ImageFont.FreeTypeFont, root: pathlib.Path):
@@ -145,7 +179,7 @@ def build_dataset(font_dir, out_dir, chars, font_size, img_size, padding, no_clo
                     if target_file.exists() and no_clobber:
                         logger.info(f"Skipping {target_file} because it already exists")
                         return
-                    img = render_and_crop(string, font, font_size, padding, img_size)
+                    img = render_and_crop(string, font, padding, img_size)
                     if img is None:
                         logger.warning(f"Failed to render {string} for {font_name}")
                         return
