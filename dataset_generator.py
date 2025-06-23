@@ -19,6 +19,8 @@ ASCII_CHARS = (
     "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     "abcdefghijklmnopqrstuvwxyz"
     "0123456789"
+    "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
+    " \n\t"
 )
 
 FONT_ALLOWLIST = [
@@ -46,7 +48,7 @@ def char_set(name: str) -> str:
     if name == "ascii":
         return ASCII_CHARS
     if name == "letters":
-        return ASCII_CHARS[:52]          # A‑Z a‑z only
+        return ASCII_CHARS[:52] + " \n\t"          # A‑Z a‑z only
     # Interpret any other string as a literal char list:
     return name
 
@@ -196,7 +198,7 @@ def build_dataset(font_dir, out_dir, chars, font_size, img_size, padding, no_clo
 
                 for i in range(2,10):
                     for _ in range(100):
-                        random_string = ''.join(random.choices(chars + ' ', k=i))
+                        random_string = ''.join(random.choices(chars, k=i))
                         # skip all whitespace strings
                         if all(char in ' \n\t' for char in random_string):
                             continue
