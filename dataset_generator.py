@@ -128,7 +128,35 @@ def render_and_crop(text: str, font: ImageFont.FreeTypeFont,
     target_width = int(target_height * aspect_ratio)
     
     # Resize maintaining aspect ratio
-    return glyph.resize((target_width, target_height), Image.Resampling.LANCZOS)
+    resized_glyph = glyph.resize((target_width, target_height), Image.Resampling.LANCZOS)
+    
+    # Add gaussian noise using PIL's load/putpixel methods
+    def add_gaussian_noise_pil(img, noise_factor=0.1):
+        noise_std = noise_factor * 255
+        
+        # Create a copy to modify
+        noisy_img = img.copy()
+        pixels = noisy_img.load()
+        
+        width, height = img.size
+        
+        for x in range(width):
+            for y in range(height):
+                pixel = pixels[x, y]
+                
+                if isinstance(pixel, tuple):  # RGB image
+                    noisy_pixel = tuple(
+                        max(0, min(255, int(p + random.gauss(0, noise_std))))
+                        for p in pixel
+                    )
+                else:  # Grayscale image
+                    noisy_pixel = max(0, min(255, int(pixel + random.gauss(0, noise_std))))
+                
+                pixels[x, y] = noisy_pixel
+        
+        return noisy_img
+    
+    return add_gaussian_noise_pil(resized_glyph)
 
 
 def build_dataset(font_dir, out_dir, chars, font_size, img_size, padding, no_clobber):
