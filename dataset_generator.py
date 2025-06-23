@@ -136,8 +136,9 @@ def build_dataset(font_dir, out_dir, chars, font_size, img_size, padding, no_clo
                 strings_to_generate.extend(cur_frontier)
 
                 for i in range(2,10):
-                    random_string = ''.join(random.choices(chars + ' ', k=i))
-                    strings_to_generate.append(random_string)
+                    for _ in range(100):
+                        random_string = ''.join(random.choices(chars + ' ', k=i))
+                        strings_to_generate.append(random_string)
 
                 def generate_image_for_string(string: str, font: ImageFont.FreeTypeFont, root: pathlib.Path):
                     target_file = root / f"{font_name}_{string}.png"
@@ -168,12 +169,12 @@ def build_dataset(font_dir, out_dir, chars, font_size, img_size, padding, no_clo
             else:
                 generate_all_images_for_font(font, font_family_name)
 
+
         except Exception as e:
+            logger.error(f"{font_path.name}: {e}")
             failed_fonts.append(font_path)
-            logging.error(f"{font_path.name}: {e}")
             continue
 
-        logging.info(f"Processed {len(chars)} glyphs for {font_family_name}")
     
     if failed_fonts:
         logging.warning(f"Failed to process {len(failed_fonts)} fonts: {failed_fonts}")

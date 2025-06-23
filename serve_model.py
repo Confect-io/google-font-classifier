@@ -1,8 +1,6 @@
-import os
 import sys
 
 import torch
-from peft import PeftModel
 from PIL import Image
 from transformers import AutoImageProcessor, Dinov2ForImageClassification
 
