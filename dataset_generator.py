@@ -110,7 +110,25 @@ def sanitize_filename(text: str) -> str:
         '|': '_pipe_',
         '\n': '_newline_',
         '\t': '_tab_',
-        ' ': '_space_'
+        ' ': '_space_',
+        '`': '_backtick_',
+        '~': '_tilde_',
+        '!': '_exclamation_',
+        '@': '_at_',
+        '#': '_hash_',
+        '$': '_dollar_',
+        '%': '_percent_',
+        '^': '_caret_',
+        '&': '_ampersand_',
+        '(': '_lparen_',
+        ')': '_rparen_',
+        '{': '_lbrace_',
+        '}': '_rbrace_',
+        '[': '_lbracket_',
+        ']': '_rbracket_',
+        ';': '_semicolon_',
+        ',': '_comma_',
+        '.': '_dot_',
     }
     
     sanitized = text
