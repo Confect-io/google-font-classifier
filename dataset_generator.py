@@ -12,6 +12,9 @@ from fontTools.ttLib import TTFont
 from PIL import Image, ImageDraw, ImageFont
 from tqdm import tqdm
 
+# Disable PIL decompression bomb warning for large images
+Image.MAX_IMAGE_PIXELS = None
+
 logger = logging.getLogger(__name__)
 LENGTH_OF_STRINGS = 2
 
@@ -347,32 +350,30 @@ def build_dataset(font_dir, out_dir, chars, font_size, img_size, padding, no_clo
                 font_test_dir.mkdir(exist_ok=True)
 
                 # Training set
-                strings_to_generate = [char for char in chars if char not in ['\n', '\t', ' ']]
+                # strings_to_generate = [char for char in chars if char not in ['\n', '\t', ' ']]
 
-                for i in range(2,100):
-                    for _ in range(10):
-                        random_string = ''.join(random.choices(chars, k=i))
-                        # skip all whitespace strings
-                        if all(char in ' \n\t' for char in random_string):
-                            continue
-                        strings_to_generate.append(random_string)
+                # for i in range(2,100):
+                #     random_string = ''.join(random.choices(chars, k=i))
+                #     # skip all whitespace strings
+                #     if all(char in ' \n\t' for char in random_string):
+                #         continue
+                #     strings_to_generate.append(random_string)
                 
-                # Add random sentences from input_data
-                for _ in range(500):  # Generate 500 random sentences
-                    sentence = choose_sentence()
-                    if sentence:
-                        strings_to_generate.append(sentence)
+                # # Add random sentences from input_data
+                # for _ in range(500):  # Generate 500 random sentences
+                #     sentence = choose_sentence()
+                #     if sentence:
+                #         strings_to_generate.append(sentence)
 
-                for string in strings_to_generate:
-                    generate_image_for_string(string, font, font_train_dir)
+                # for string in strings_to_generate:
+                #     generate_image_for_string(string, font, font_train_dir)
 
                 # Test set
                 for i in range(2, 100):
-                    for _ in range(10):
-                        random_string = ''.join(random.choices(chars, k=i))
-                        if all(char in ['\n', '\t', ' '] for char in random_string):
-                            continue
-                        generate_image_for_string(random_string, font, font_test_dir)
+                    random_string = ''.join(random.choices(chars, k=i))
+                    if all(char in ['\n', '\t', ' '] for char in random_string):
+                        continue
+                    generate_image_for_string(random_string, font, font_test_dir)
                 
                 # Add random sentences to test set
                 for _ in range(50):  # Generate 50 random sentences for test
