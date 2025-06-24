@@ -12,7 +12,7 @@ git clone --filter=blob:none --depth 1 https://github.com/google/fonts.git
 ```
 python dataset_generator.py \
     --font_dir ../fonts/ofl \
-    --out_dir ./glyphs224 \
+    --out_dir .data_out/glyphs224 \
     --chars ascii \
     --img_size 224 \
     --font_size 1024 \
@@ -66,7 +66,7 @@ Then, train the model on the cleaned dataset ex:
 ```
 python train_model.py \
     --data_dir glyphs224 \     
-    --output_dir dinov2-fonts \
+    --output_dir ./data_out/dinov2-fonts \
     --batch_size 32 \
     --epochs 100 \
     --learning_rate 1e-4 \
