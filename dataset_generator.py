@@ -380,7 +380,7 @@ def build_dataset(font_dir, out_dir, chars, font_size, img_size, padding, no_clo
                     generate_image_for_string(random_string, font, font_train_dir)
 
                 ### Add random sentences from input_data
-                for _ in range(100):
+                for _ in range(10):
                     sentence = choose_sentence()
                     if sentence:
                         generate_image_for_string(sentence, font, font_train_dir)
