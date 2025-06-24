@@ -227,24 +227,6 @@ def build_dataset(font_dir, out_dir, chars, font_size, img_size, padding, no_clo
             font = ImageFont.truetype(str(font_path), font_size, layout_engine=ImageFont.Layout.BASIC)
 
             def generate_all_images_for_font(font: ImageFont.FreeTypeFont, font_name: str):
-                font_train_dir = train_dir / font_name
-                font_test_dir = test_dir / font_name
-                font_train_dir.mkdir(exist_ok=True)
-                font_test_dir.mkdir(exist_ok=True)
-
-                strings_to_generate = []
-
-                cur_frontier = [char for char in chars]
-                strings_to_generate.extend(cur_frontier)
-
-                for i in range(2,10):
-                    for _ in range(100):
-                        random_string = ''.join(random.choices(chars, k=i))
-                        # skip all whitespace strings
-                        if all(char in ' \n\t' for char in random_string):
-                            continue
-                        strings_to_generate.append(random_string)
-
                 def generate_image_for_string(string: str, font: ImageFont.FreeTypeFont, root: pathlib.Path):
                     # Sanitize the string for use in filename
                     safe_string = sanitize_filename(string)
@@ -259,11 +241,28 @@ def build_dataset(font_dir, out_dir, chars, font_size, img_size, padding, no_clo
                     logger.info(f"Saving {target_file}")
                     img.save(target_file)
                     logger.info(f"Saved {target_file}")
+                    
+                font_train_dir = train_dir / font_name
+                font_test_dir = test_dir / font_name
+                font_train_dir.mkdir(exist_ok=True)
+                font_test_dir.mkdir(exist_ok=True)
+
+                # Training set
+                strings_to_generate = [char for char in chars]
+
+                for i in range(2,100):
+                    for _ in range(100):
+                        random_string = ''.join(random.choices(chars, k=i))
+                        # skip all whitespace strings
+                        if all(char in ' \n\t' for char in random_string):
+                            continue
+                        strings_to_generate.append(random_string)
 
                 for string in strings_to_generate:
                     generate_image_for_string(string, font, font_train_dir)
 
-                for i in range(2, 10):
+                # Test set
+                for i in range(2, 100):
                     for _ in range(100):
                         random_string = ''.join(random.choices(chars, k=i))
                         if all(char in ['\n', '\t', ' '] for char in random_string):
