@@ -129,6 +129,7 @@ def sanitize_filename(text: str) -> str:
         ';': '_semicolon_',
         ',': '_comma_',
         '.': '_dot_',
+        "'": "_single_quote_",
     }
     
     sanitized = text
