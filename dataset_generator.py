@@ -73,6 +73,9 @@ def sanitize_filename(text: str) -> str:
     sanitized = text
     for char, replacement in replacements.items():
         sanitized = sanitized.replace(char, replacement)
+
+    if len(sanitized) > 200:
+        sanitized = "nameTooLong" + str(random.randint(0, 1000000))
     
     return sanitized
 
@@ -202,6 +205,50 @@ def render_and_crop(text: str, font: ImageFont.FreeTypeFont,
     return add_gaussian_noise_pil(resized_glyph)
 
 
+def choose_sentence():
+    """Choose a random substring from text files in input_data directory."""
+    
+    input_data_dir = pathlib.Path("input_data")
+    if not input_data_dir.exists():
+        return None
+    
+    # Find all text files
+    text_files = list(input_data_dir.glob("*.txt"))
+    if not text_files:
+        return None
+    
+    # Choose a random text file
+    text_file = random.choice(text_files)
+    
+    try:
+        with open(text_file, 'r', encoding='utf-8') as f:
+            content = f.read().strip()
+        
+        if len(content) < 10:  # Skip very short files
+            return None
+        
+        # Choose random substring length (between 5 and 100 characters)
+        max_length = min(200, len(content))
+        substring_length = random.randint(20, max_length)
+        
+        # Choose random starting position
+        start_pos = random.randint(0, len(content) - substring_length)
+        
+        # Extract substring
+        substring = content[start_pos:start_pos + substring_length]
+
+        # Randomly replace some spaces with newlines
+        CHANCE_TO_REPLACE_SPACE_WITH_NEWLINE = 0.2
+        substring = ''.join('\n' if char == ' ' and random.random() < CHANCE_TO_REPLACE_SPACE_WITH_NEWLINE else char for char in substring)
+        
+        return substring.strip()
+        
+    except Exception as e:
+        logger.warning(f"Error reading {text_file}: {e}")
+        return None
+
+
+
 def build_dataset(font_dir, out_dir, chars, font_size, img_size, padding, no_clobber):
     font_dir, out_dir = pathlib.Path(font_dir), pathlib.Path(out_dir)
     train_dir, test_dir = out_dir / "train", out_dir / "test"
@@ -248,26 +295,38 @@ def build_dataset(font_dir, out_dir, chars, font_size, img_size, padding, no_clo
                 font_test_dir.mkdir(exist_ok=True)
 
                 # Training set
-                strings_to_generate = [char for char in chars]
+                strings_to_generate = [char for char in chars if char not in ['\n', '\t', ' ']]
 
                 for i in range(2,100):
-                    for _ in range(100):
+                    for _ in range(10):
                         random_string = ''.join(random.choices(chars, k=i))
                         # skip all whitespace strings
                         if all(char in ' \n\t' for char in random_string):
                             continue
                         strings_to_generate.append(random_string)
+                
+                # Add random sentences from input_data
+                for _ in range(500):  # Generate 500 random sentences
+                    sentence = choose_sentence()
+                    if sentence:
+                        strings_to_generate.append(sentence)
 
                 for string in strings_to_generate:
                     generate_image_for_string(string, font, font_train_dir)
 
                 # Test set
                 for i in range(2, 100):
-                    for _ in range(100):
+                    for _ in range(10):
                         random_string = ''.join(random.choices(chars, k=i))
                         if all(char in ['\n', '\t', ' '] for char in random_string):
                             continue
                         generate_image_for_string(random_string, font, font_test_dir)
+                
+                # Add random sentences to test set
+                for _ in range(50):  # Generate 50 random sentences for test
+                    sentence = choose_sentence()
+                    if sentence:
+                        generate_image_for_string(sentence, font, font_test_dir)
 
             
             if font_is_variable(font_path):
