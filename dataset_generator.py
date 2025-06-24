@@ -261,12 +261,12 @@ def choose_sentence():
     
     input_data_dir = pathlib.Path("input_data")
     if not input_data_dir.exists():
-        return None
+        raise ValueError(f"Input data directory {input_data_dir} does not exist")
     
     # Find all text files
     text_files = list(input_data_dir.glob("*.txt"))
     if not text_files:
-        return None
+        raise ValueError(f"No text files found in {input_data_dir}")
     
     # Choose a random text file
     text_file = random.choice(text_files)
@@ -275,12 +275,11 @@ def choose_sentence():
         with open(text_file, 'r', encoding='utf-8') as f:
             content = f.read().strip()
         
-        if len(content) < 10:  # Skip very short files
-            return None
+        if len(content) < 100:  # Skip very short files
+            raise ValueError(f"File {text_file} is too short")
         
-        # Choose random substring length (between 5 and 100 characters)
-        max_length = min(200, len(content))
-        substring_length = random.randint(20, max_length)
+        # Choose random substring length
+        substring_length = random.randint(20, 100)
         
         # Choose random starting position
         start_pos = random.randint(0, len(content) - substring_length)
@@ -349,34 +348,27 @@ def build_dataset(font_dir, out_dir, chars, font_size, img_size, padding, no_clo
                 font_train_dir.mkdir(exist_ok=True)
                 font_test_dir.mkdir(exist_ok=True)
 
-                # Training set
-                # strings_to_generate = [char for char in chars if char not in ['\n', '\t', ' ']]
+                ### Training set
+                for char in chars:
+                    if char in ['\n', '\t', ' ']:
+                        continue
+                    generate_image_for_string(char, font, font_train_dir)
 
-                # for i in range(2,100):
-                #     random_string = ''.join(random.choices(chars, k=i))
-                #     # skip all whitespace strings
-                #     if all(char in ' \n\t' for char in random_string):
-                #         continue
-                #     strings_to_generate.append(random_string)
-                
-                # # Add random sentences from input_data
-                # for _ in range(500):  # Generate 500 random sentences
-                #     sentence = choose_sentence()
-                #     if sentence:
-                #         strings_to_generate.append(sentence)
+                for i in range(2,100):
+                    random_string = ''.join(random.choices(chars, k=i))
+                    # skip all whitespace strings
+                    if all(char in ' \n\t' for char in random_string):
+                        continue
+                    generate_image_for_string(random_string, font, font_train_dir)
 
-                # for string in strings_to_generate:
-                #     generate_image_for_string(string, font, font_train_dir)
+                ### Add random sentences from input_data
+                for _ in range(100):
+                    sentence = choose_sentence()
+                    if sentence:
+                        generate_image_for_string(sentence, font, font_train_dir)
 
                 # Test set
-                for i in range(2, 100):
-                    random_string = ''.join(random.choices(chars, k=i))
-                    if all(char in ['\n', '\t', ' '] for char in random_string):
-                        continue
-                    generate_image_for_string(random_string, font, font_test_dir)
-                
-                # Add random sentences to test set
-                for _ in range(50):  # Generate 50 random sentences for test
+                for _ in range(10):
                     sentence = choose_sentence()
                     if sentence:
                         generate_image_for_string(sentence, font, font_test_dir)
