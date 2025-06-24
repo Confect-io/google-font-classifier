@@ -115,31 +115,48 @@ def render_and_crop(text: str, font: ImageFont.FreeTypeFont,
     
     bg_color, text_color = generate_contrasting_colors()
     
-    # Calculate text dimensions
-    left, top, right, bottom = font.getbbox(text)
-    text_width = right - left
-    text_height = bottom - top
+    # Handle multi-line text properly
+    lines = text.split('\n')
     
-    # Calculate canvas dimensions with padding
-    canvas_width = text_width + padding * 2
-    canvas_height = text_height + padding * 2
+    # Calculate dimensions for multi-line text
+    line_height = font.getbbox('Ay')[3] - font.getbbox('Ay')[1]  # Height from A to y (covers ascenders and descenders)
+    line_spacing = int(line_height * 0.2)  # 20% additional spacing between lines
+    
+    # Calculate total text dimensions
+    max_width = 0
+    total_height = len(lines) * line_height + (len(lines) - 1) * line_spacing
+    
+    for line in lines:
+        if line.strip():  # Skip empty lines for width calculation
+            left, top, right, bottom = font.getbbox(line)
+            line_width = right - left
+            max_width = max(max_width, line_width)
+    
+    # Use larger dimensions for canvas to ensure nothing gets cropped
+    canvas_width = max_width + padding * 2
+    canvas_height = int(total_height) + padding * 2
     
     # Create canvas with random background color
     canvas = Image.new("RGB", (canvas_width, canvas_height), bg_color)
     draw = ImageDraw.Draw(canvas)
     
-    # Calculate text position (centered)
-    text_x = canvas_width // 2
-    text_y = canvas_height // 2
-    
-    # Draw text with contrasting color
-    draw.text(
-        (text_x, text_y),
-        text,
-        fill=text_color,
-        font=font,
-        anchor="mm",
-    )
+    # Draw each line of text
+    start_y = padding
+    for i, line in enumerate(lines):
+        if line.strip():  # Skip completely empty lines
+            # Center each line horizontally
+            line_bbox = font.getbbox(line)
+            line_width = line_bbox[2] - line_bbox[0]
+            text_x = (canvas_width - line_width) // 2
+            text_y = start_y + i * (line_height + line_spacing)
+            
+            draw.text(
+                (text_x, text_y),
+                line,
+                fill=text_color,
+                font=font,
+                anchor="lt",  # left-top anchor for precise positioning
+            )
     
     # Find bbox of non-background pixels
     bbox = canvas.getbbox()
