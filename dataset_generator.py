@@ -24,21 +24,61 @@ ASCII_CHARS = (
 )
 
 FONT_ALLOWLIST = [
-"Inter",
+"Lato",
+"AnkeDevanagari",
+"Merriweather",
+"Alegreya",
+"Montserrat",
+"Aleo",
+"Muli",
+"Arapey",
+"Nunito",
+"AsapCondensed",
+"Assistant",
+"OpenSans",
+"Barlow",
+"Oswald",
+"Bitter",
 "Poppins",
-"Arial",
+"Brawler",
 "Roboto",
-"InstrumentSans",
-"InstrumentSerif",
-"TimesNewRoman",
-"Baskerville",
+"Caladea",
+"ROKKITT",
+"Carme",
+"Rubik",
+"EncodeSansSemiCondensed",
+"Enriqueta",
+"SourceSans3",
+"FrankRuhlLibre",
+"Spectral",
+"WorkSans",
+"Gelasio",
+"HeadlandOne",
+"Lora",
+"CrimsonText",
+"PlayfairDisplay",
 "PTSerif",
-"LibreCaslonText",
-"PermanentMarker",
-"PinyonScript",
-"Gluten",
-"MeowScript",
-"PatrickHand",
+"Raleway",
+"SourceCodePro",
+"Ubuntu",
+"RobotoCondensed",
+"JosefinSans",
+"Cabin",
+"Domine",
+"FiraSans",
+"Inconsolata",
+"Karla",
+"LibreBaskerville",
+"Maitree",
+"NanumGothic",
+"Quattrocento",
+"Teko",
+"ZillaSlab",
+"Inter",
+"InstrumentSerif",
+"InstrumentSans",
+"CedarvillCursive",
+"Collapse",
 ]
 
 def font_is_variable(font_path: pathlib.Path) -> bool:
@@ -267,6 +307,10 @@ def build_dataset(font_dir, out_dir, chars, font_size, img_size, padding, no_clo
     font_paths = [font_path for font_path in font_paths if font_path.stem.split("[")[0].split("-")[0] in FONT_ALLOWLIST]
     if not font_paths:
         sys.exit(f"No font files found under {font_dir!s}")
+
+    if len(font_paths) < len(FONT_ALLOWLIST):
+        missing_fonts = [font for font in FONT_ALLOWLIST if not any(font in font_path for font_path in font_paths)]
+        raise ValueError(f"Not enough font files found under {font_dir!s}: {missing_fonts}")
 
     logger.info(f"Found {len(font_paths)} font files: {font_paths}")
 
