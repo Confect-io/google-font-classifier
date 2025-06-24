@@ -52,6 +52,30 @@ def char_set(name: str) -> str:
     # Interpret any other string as a literal char list:
     return name
 
+def sanitize_filename(text: str) -> str:
+    """Sanitize a string to be safe for use in filenames."""
+    # Replace problematic characters with safe alternatives
+    replacements = {
+        '/': '_slash_',
+        '\\': '_backslash_',
+        ':': '_colon_',
+        '*': '_star_',
+        '?': '_question_',
+        '"': '_quote_',
+        '<': '_lt_',
+        '>': '_gt_',
+        '|': '_pipe_',
+        '\n': '_newline_',
+        '\t': '_tab_',
+        ' ': '_space_'
+    }
+    
+    sanitized = text
+    for char, replacement in replacements.items():
+        sanitized = sanitized.replace(char, replacement)
+    
+    return sanitized
+
 def render_and_crop(text: str, font: ImageFont.FreeTypeFont,
                      padding: int,
                     img_size: int) -> Image.Image:
@@ -205,7 +229,9 @@ def build_dataset(font_dir, out_dir, chars, font_size, img_size, padding, no_clo
                         strings_to_generate.append(random_string)
 
                 def generate_image_for_string(string: str, font: ImageFont.FreeTypeFont, root: pathlib.Path):
-                    target_file = root / f"{font_name}_{string}.png"
+                    # Sanitize the string for use in filename
+                    safe_string = sanitize_filename(string)
+                    target_file = root / f"{font_name}_{safe_string}.png"
                     if target_file.exists() and no_clobber:
                         logger.info(f"Skipping {target_file} because it already exists")
                         return
@@ -213,6 +239,7 @@ def build_dataset(font_dir, out_dir, chars, font_size, img_size, padding, no_clo
                     if img is None:
                         logger.warning(f"Failed to render {string} for {font_name}")
                         return
+                    logger.info(f"Saving {target_file}")
                     img.save(target_file)
                     logger.info(f"Saved {target_file}")
 
@@ -220,7 +247,9 @@ def build_dataset(font_dir, out_dir, chars, font_size, img_size, padding, no_clo
                     generate_image_for_string(string, font, font_train_dir)
 
                 for i in range(2, 10):
-                    random_string = ''.join(random.choices(chars + ' ', k=i))
+                    random_string = ''.join(random.choices(chars, k=i))
+                    if all(char in ' \n\t' for char in random_string):
+                        continue
                     generate_image_for_string(random_string, font, font_test_dir)
 
             
@@ -235,13 +264,18 @@ def build_dataset(font_dir, out_dir, chars, font_size, img_size, padding, no_clo
 
 
         except Exception as e:
-            logger.error(f"{font_path.name}: {e}")
-            failed_fonts.append(font_path)
+            import traceback
+            logger.error(f"Failed to process font {font_path.name}:")
+            logger.error(f"  Error: {e}")
+            logger.error(f"  Traceback:\n{traceback.format_exc()}")
+            failed_fonts.append((font_path, str(e)))
             continue
 
     
     if failed_fonts:
-        logging.warning(f"Failed to process {len(failed_fonts)} fonts: {failed_fonts}")
+        logger.warning(f"Failed to process {len(failed_fonts)} fonts:")
+        for font_path, error in failed_fonts:
+            logger.warning(f"  {font_path.name}: {error}")
 
 def cli():
     ap = argparse.ArgumentParser(description="Crop glyphs for DINO v2 fine‑tuning")
