@@ -413,9 +413,9 @@ def cli():
     ap.add_argument("--chars",     default="ascii",
                     help="'ascii', 'letters', or a literal string of chars")
     ap.add_argument("--img_size",  type=int, default=224, help="Final square size (px)")
-    ap.add_argument("--font_size", type=int, default=1024,
+    ap.add_argument("--font_size", type=int, default=48,
                     help="Font size used for initial rendering")
-    ap.add_argument("--padding",   type=int, default=500, help="Pixels of padding before crop")
+    ap.add_argument("--padding",   type=int, default=50, help="Pixels of padding before crop")
     ap.add_argument("--no-clobber", action="store_true", help="Skip existing files, useful for rerunning when there are errors.")
     ap.add_argument("--verbose",   action="store_true", help="Verbose output")
     args = ap.parse_args()
