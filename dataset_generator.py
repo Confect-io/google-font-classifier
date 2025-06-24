@@ -247,10 +247,11 @@ def build_dataset(font_dir, out_dir, chars, font_size, img_size, padding, no_clo
                     generate_image_for_string(string, font, font_train_dir)
 
                 for i in range(2, 10):
-                    random_string = ''.join(random.choices(chars, k=i))
-                    if all(char in ' \n\t' for char in random_string):
-                        continue
-                    generate_image_for_string(random_string, font, font_test_dir)
+                    for _ in range(100):
+                        random_string = ''.join(random.choices(chars, k=i))
+                        if all(char in ['\n', '\t', ' '] for char in random_string):
+                            continue
+                        generate_image_for_string(random_string, font, font_test_dir)
 
             
             if font_is_variable(font_path):
