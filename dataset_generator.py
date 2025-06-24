@@ -143,14 +143,22 @@ def render_and_crop(text: str, font: ImageFont.FreeTypeFont,
     canvas = Image.new("RGB", (canvas_width, canvas_height), bg_color)
     draw = ImageDraw.Draw(canvas)
     
-    # Draw each line of text
+    # Draw each line of text with random alignment
+    alignment = random.choice(['left', 'center', 'right'])
     start_y = padding
     for i, line in enumerate(lines):
         if line.strip():  # Skip completely empty lines
-            # Center each line horizontally
             line_bbox = font.getbbox(line)
             line_width = line_bbox[2] - line_bbox[0]
-            text_x = (canvas_width - line_width) // 2
+            
+            # Calculate x position based on random alignment
+            if alignment == 'left':
+                text_x = padding
+            elif alignment == 'center':
+                text_x = (canvas_width - line_width) // 2
+            else:  # right
+                text_x = canvas_width - line_width - padding
+                
             text_y = start_y + i * (line_height + line_spacing)
             
             draw.text(
