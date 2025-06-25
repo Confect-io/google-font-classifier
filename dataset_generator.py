@@ -28,12 +28,10 @@ ASCII_CHARS = (
 
 FONT_ALLOWLIST = [
 "Lato",
-"AnkeDevanagari",
 "Merriweather",
 "Alegreya",
 "Montserrat",
 "Aleo",
-"Muli",
 "Arapey",
 "Nunito",
 "AsapCondensed",
@@ -63,7 +61,6 @@ FONT_ALLOWLIST = [
 "PT_Serif",
 "Raleway",
 "SourceCodePro",
-"Ubuntu",
 "RobotoCondensed",
 "JosefinSans",
 "Cabin",
@@ -81,7 +78,6 @@ FONT_ALLOWLIST = [
 "InstrumentSerif",
 "InstrumentSans",
 "Cedarville", # a bit of a hack, the file is Cedarville-Cursive but this messes with the parsing.
-"Collapse",
 ]
 
 def font_is_variable(font_path: pathlib.Path) -> bool:
