@@ -196,9 +196,9 @@ if __name__ == "__main__":
         # are no labels, skips compute_metrics, and never logs eval_accuracy.
         label_names=["labels"],
         eval_strategy      = "steps",
-        eval_steps         = 50,
+        eval_steps         = 500,
         save_strategy      = "steps",
-        save_steps         = 50,
+        save_steps         = 500,
         num_train_epochs   = args.epochs,
         learning_rate      = args.learning_rate,
         weight_decay       = 0.05,

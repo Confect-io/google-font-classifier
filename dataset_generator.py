@@ -60,7 +60,7 @@ FONT_ALLOWLIST = [
 "Lora",
 "CrimsonText",
 "PlayfairDisplay",
-"PTSerif",
+"PT_Serif",
 "Raleway",
 "SourceCodePro",
 "Ubuntu",
@@ -80,7 +80,7 @@ FONT_ALLOWLIST = [
 "Inter",
 "InstrumentSerif",
 "InstrumentSans",
-"CedarvillCursive",
+"Cedarville", # a bit of a hack, the file is Cedarville-Cursive but this messes with the parsing.
 "Collapse",
 ]
 
@@ -325,12 +325,14 @@ def build_dataset(font_dir, out_dir, chars, font_size, img_size, padding, no_clo
     test_dir.mkdir(parents=True, exist_ok=True)
 
     font_paths = list(font_dir.rglob("*.ttf")) + list(font_dir.rglob("*.otf"))
-    font_paths = [font_path for font_path in font_paths if font_path.stem.split("[")[0].split("-")[0] in FONT_ALLOWLIST]
+    font_paths = [font_path for font_path in font_paths if font_path.stem.split("[")[0].split("-")[0].lower() in [font.lower() for font in FONT_ALLOWLIST]]
     if not font_paths:
         sys.exit(f"No font files found under {font_dir!s}")
 
-    if len(font_paths) < len(FONT_ALLOWLIST):
-        missing_fonts = [font for font in FONT_ALLOWLIST if not any(font in font_path for font_path in font_paths)]
+
+    missing_fonts = [font for font in FONT_ALLOWLIST if not any(font.lower() in font_path.stem.lower() for font_path in font_paths)]
+
+    if missing_fonts:
         raise ValueError(f"Not enough font files found under {font_dir!s}: {missing_fonts}")
 
     logger.info(f"Found {len(font_paths)} font files: {font_paths}")
@@ -386,7 +388,7 @@ def build_dataset(font_dir, out_dir, chars, font_size, img_size, padding, no_clo
                     if sentence:
                         generate_image_for_string(sentence, font, font_train_dir)
 
-                # Test set
+                ### Test set
                 for _ in range(10):
                     sentence = choose_sentence()
                     if sentence:
