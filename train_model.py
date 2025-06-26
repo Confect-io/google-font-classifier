@@ -77,35 +77,40 @@ def load_checkpoint_with_size_mismatch_handling(base_model, checkpoint_path, pef
         )
         logger.info("Successfully loaded checkpoint without size mismatches")
         return model
-    except RuntimeError as e:
-        if "size mismatch" in str(e):
-            logger.info("Size mismatch detected, using fallback loading method")
-            
-            # Fallback: Create new model and load compatible weights
-            model = get_peft_model(base_model, peft_config)
-            
-            # Load checkpoint state dict
-            checkpoint_file = os.path.join(checkpoint_path, "adapter_model.safetensors")
-
-            if not os.path.exists(checkpoint_file):
-                raise ValueError(f"Checkpoint file {checkpoint_file} does not exist")
-            
-            checkpoint_state_dict = {}
-            with safe_open(checkpoint_file, framework="pt", device="cpu") as f:
-                for key in f.keys():
-                    checkpoint_state_dict[key] = f.get_tensor(key)
+    except Exception as e:
+        logger.info(f"Standard loading failed ({str(e)}), using fallback loading method")
         
-            # Load only compatible weights
-            missing_keys, unexpected_keys = model.load_state_dict(checkpoint_state_dict, strict=False)
-            
-            logger.info(f"Loaded checkpoint with {len(missing_keys)} missing keys and {len(unexpected_keys)} unexpected keys")
-            logger.info(f"The following keys were in the checkpoint but are now missing: {missing_keys}")
-            logger.info(f"The following keys are new i.e. unexpected: {unexpected_keys}")
-            logger.info("Missing keys (likely new classifier parameters): will be randomly initialized")
-            
-            return model
-        else:
-            raise e
+        # Fallback: Create fresh PEFT model and load compatible weights
+        # Note: PeftModel.from_pretrained might have partially modified base_model before failing,
+        # so we recreate a clean base model to avoid double-loading warnings
+        fresh_base = Dinov2ForImageClassification.from_pretrained(
+            "facebook/dinov2-base-imagenet1k-1-layer",
+            num_labels=base_model.config.num_labels,
+            ignore_mismatched_sizes=True,
+        )
+        
+        model = get_peft_model(fresh_base, peft_config)
+        
+        # Load checkpoint state dict
+        checkpoint_file = os.path.join(checkpoint_path, "adapter_model.safetensors")
+
+        if not os.path.exists(checkpoint_file):
+            raise ValueError(f"Checkpoint file {checkpoint_file} does not exist")
+        
+        checkpoint_state_dict = {}
+        with safe_open(checkpoint_file, framework="pt", device="cpu") as f:
+            for key in f.keys():
+                checkpoint_state_dict[key] = f.get_tensor(key)
+    
+        # Load only compatible weights
+        missing_keys, unexpected_keys = model.load_state_dict(checkpoint_state_dict, strict=False)
+        
+        logger.info(f"Loaded checkpoint with {len(missing_keys)} missing keys and {len(unexpected_keys)} unexpected keys")
+        logger.info(f"The following keys were in the checkpoint but are now missing: {missing_keys}")
+        logger.info(f"The following keys are new i.e. unexpected: {unexpected_keys}")
+        logger.info("Missing keys (likely new classifier parameters): will be randomly initialized")
+        
+        return model
 
 
 if __name__ == "__main__":
