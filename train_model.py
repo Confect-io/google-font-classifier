@@ -51,6 +51,65 @@ def parse_args():
     return parser.parse_args()
 
 
+def load_checkpoint_with_size_mismatch_handling(base_model, checkpoint_path, peft_config):
+    """
+    Load PEFT checkpoint with automatic handling of size mismatches.
+    This uses PEFT's built-in loading but with strict=False to handle size mismatches gracefully.
+
+    Basically, if we have a different number of labels than in the checkpoint, we re-initialize the classifier head to relearn it.
+    
+    Args:
+        base_model: The base model with the new classifier size
+        checkpoint_path: Path to the checkpoint
+        peft_config: LoraConfig object with the desired configuration
+    
+    Returns:
+        PeftModel with loaded weights (mismatched layers will be skipped)
+    """
+    logger.info(f"Loading checkpoint with automatic size mismatch handling: {checkpoint_path}")
+    
+    try:
+        # Try the normal PEFT loading first
+        model = PeftModel.from_pretrained(
+            base_model,
+            checkpoint_path,
+            is_trainable=True
+        )
+        logger.info("Successfully loaded checkpoint without size mismatches")
+        return model
+    except RuntimeError as e:
+        if "size mismatch" in str(e):
+            logger.info("Size mismatch detected, using fallback loading method")
+            
+            # Fallback: Create new model and load compatible weights
+            model = get_peft_model(base_model, peft_config)
+            
+            # Load checkpoint state dict
+            checkpoint_files = [f for f in os.listdir(checkpoint_path) if f.endswith('.safetensors') or f.endswith('.bin')]
+            if not checkpoint_files:
+                raise ValueError(f"No checkpoint files found in {checkpoint_path}")
+            
+            checkpoint_file = os.path.join(checkpoint_path, checkpoint_files[0])
+            
+            if checkpoint_file.endswith('.safetensors'):
+                checkpoint_state_dict = {}
+                with safe_open(checkpoint_file, framework="pt", device="cpu") as f:
+                    for key in f.keys():
+                        checkpoint_state_dict[key] = f.get_tensor(key)
+            else:
+                checkpoint_state_dict = torch.load(checkpoint_file, map_location="cpu")
+            
+            # Load only compatible weights
+            missing_keys, unexpected_keys = model.load_state_dict(checkpoint_state_dict, strict=False)
+            
+            logger.info(f"Loaded checkpoint with {len(missing_keys)} missing keys and {len(unexpected_keys)} unexpected keys")
+            logger.info("Missing keys (likely new classifier parameters): will be randomly initialized")
+            
+            return model
+        else:
+            raise e
+
+
 if __name__ == "__main__":
     args = parse_args()
     
@@ -159,11 +218,7 @@ if __name__ == "__main__":
     )
 
     if args.checkpoint:
-        model  = PeftModel.from_pretrained(
-                 base,
-                 args.checkpoint,
-                 is_trainable=True
-             )
+        model = load_checkpoint_with_size_mismatch_handling(base, args.checkpoint, peft_cfg)
     else:
         model  = get_peft_model(base, peft_cfg)        # fresh LoRA wrap
     

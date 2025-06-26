@@ -113,3 +113,40 @@ git clone https://huggingface.co/dchen0/font-classifier
 ```
 python serve_model.py some_image.png
 ```
+
+
+## Handling Expanded Datasets with Existing Checkpoints
+
+If you've trained a model and later expanded your dataset with more font classes, you can continue training without starting from scratch using Automatic Size Mismatch Handling.
+
+This method automatically detects size mismatches and loads compatible weights while initializing new classifier parameters randomly:
+
+```bash
+python train_model.py \
+    --data_dir .data_out/PROD_font_dataset \
+    --checkpoint path/to/your/checkpoint \
+    --output_dir ./output \
+    --epochs 5
+```
+
+The script will:
+- Try to load the checkpoint normally
+- If size mismatch is detected, fall back to loading only compatible weights
+- Initialize new classifier parameters randomly
+- Continue training from there
+
+
+### Example: Expanding from 682 to 700 Classes
+
+If your original checkpoint was trained on 682 font classes and you now have 700 classes, the regular checkpoint loading code will just work, no explicit configuration required:
+
+```bash
+python train_model.py \
+    --data_dir .data_out/PROD_font_dataset \
+    --checkpoint ./output/checkpoint-1500 \
+    --output_dir ./continued_training \
+    --epochs 3 \
+    --learning_rate 1e-5  # Lower learning rate for fine-tuning
+```
+
+The script will show how many parameters are being loaded vs. initialized.
