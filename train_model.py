@@ -99,6 +99,8 @@ def load_checkpoint_with_size_mismatch_handling(base_model, checkpoint_path, pef
             missing_keys, unexpected_keys = model.load_state_dict(checkpoint_state_dict, strict=False)
             
             logger.info(f"Loaded checkpoint with {len(missing_keys)} missing keys and {len(unexpected_keys)} unexpected keys")
+            logger.info(f"The following keys were in the checkpoint but are now missing: {missing_keys}")
+            logger.info(f"The following keys are new i.e. unexpected: {unexpected_keys}")
             logger.info("Missing keys (likely new classifier parameters): will be randomly initialized")
             
             return model
