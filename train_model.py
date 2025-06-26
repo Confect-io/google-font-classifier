@@ -85,20 +85,16 @@ def load_checkpoint_with_size_mismatch_handling(base_model, checkpoint_path, pef
             model = get_peft_model(base_model, peft_config)
             
             # Load checkpoint state dict
-            checkpoint_files = [f for f in os.listdir(checkpoint_path) if f.endswith('.safetensors') or f.endswith('.bin')]
-            if not checkpoint_files:
-                raise ValueError(f"No checkpoint files found in {checkpoint_path}")
+            checkpoint_file = os.path.join(checkpoint_path, "adapter_model.safetensors")
+
+            if not os.path.exists(checkpoint_file):
+                raise ValueError(f"Checkpoint file {checkpoint_file} does not exist")
             
-            checkpoint_file = os.path.join(checkpoint_path, checkpoint_files[0])
-            
-            if checkpoint_file.endswith('.safetensors'):
-                checkpoint_state_dict = {}
-                with safe_open(checkpoint_file, framework="pt", device="cpu") as f:
-                    for key in f.keys():
-                        checkpoint_state_dict[key] = f.get_tensor(key)
-            else:
-                checkpoint_state_dict = torch.load(checkpoint_file, map_location="cpu")
-            
+            checkpoint_state_dict = {}
+            with safe_open(checkpoint_file, framework="pt", device="cpu") as f:
+                for key in f.keys():
+                    checkpoint_state_dict[key] = f.get_tensor(key)
+        
             # Load only compatible weights
             missing_keys, unexpected_keys = model.load_state_dict(checkpoint_state_dict, strict=False)
             
