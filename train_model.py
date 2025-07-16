@@ -19,6 +19,8 @@ from transformers import (
 
 logger = logging.getLogger(__name__)
 
+MODEL = "facebook/dinov2-base-imagenet1k-1-layer"
+
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a DINOv2 model for font classification')
     parser.add_argument('--data_dir', type=str, default=None,
@@ -84,7 +86,7 @@ def load_checkpoint_with_size_mismatch_handling(base_model, checkpoint_path, pef
         # Note: PeftModel.from_pretrained might have partially modified base_model before failing,
         # so we recreate a clean base model to avoid double-loading warnings
         fresh_base = Dinov2ForImageClassification.from_pretrained(
-            "facebook/dinov2-base-imagenet1k-1-layer",
+            MODEL,
             num_labels=base_model.config.num_labels,
             ignore_mismatched_sizes=True,
         )
@@ -111,6 +113,42 @@ def load_checkpoint_with_size_mismatch_handling(base_model, checkpoint_path, pef
         logger.info("Missing keys (likely new classifier parameters): will be randomly initialized")
         
         return model
+    
+def get_transform(processor: AutoImageProcessor, size: int):
+    normalize   = T.Normalize(mean=processor.image_mean, std=processor.image_std)
+
+    to_rgb = T.Lambda(lambda img: img.convert('RGB'))
+ 
+    def pad_to_square(img):
+        w, h = img.size
+        max_size = max(w, h)
+        pad_w = (max_size - w) // 2
+        pad_h = (max_size - h) // 2
+        padding = (pad_w, pad_h, max_size - w - pad_w, max_size - h - pad_h)
+        return T.Pad(padding, fill=0)(img)
+
+    train_aug   = T.Compose([
+        to_rgb,
+        pad_to_square,
+        T.Resize(size),
+        T.ToTensor(), 
+        normalize,
+    ])
+    val_aug     = T.Compose([
+        to_rgb,
+        pad_to_square,
+        T.Resize(size),
+        T.ToTensor(), 
+        normalize
+    ])
+
+    def transform(example, train=True):
+        # The dataset uses 'image' as the key for PIL images
+        example["pixel_values"] = train_aug(example["image"]) if train else val_aug(example["image"])
+        return example
+
+    return transform
+    
 
 
 if __name__ == "__main__":
@@ -150,39 +188,10 @@ if __name__ == "__main__":
     logger.info(f"Train size: {len(dataset['train'])}, Validation size: {len(dataset['test'])}")
 
     logger.info("Setting up image processor and augmentations")
-    processor   = AutoImageProcessor.from_pretrained("facebook/dinov2-base-imagenet1k-1-layer")  # 224 px
+    processor   = AutoImageProcessor.from_pretrained(MODEL)  # 224 px
     size        = processor.size["shortest_edge"]            # 224 by default
-    normalize   = T.Normalize(mean=processor.image_mean, std=processor.image_std)
 
-    to_rgb = T.Lambda(lambda img: img.convert('RGB'))
- 
-    def pad_to_square(img):
-        w, h = img.size
-        max_size = max(w, h)
-        pad_w = (max_size - w) // 2
-        pad_h = (max_size - h) // 2
-        padding = (pad_w, pad_h, max_size - w - pad_w, max_size - h - pad_h)
-        return T.Pad(padding, fill=0)(img)
-
-    train_aug   = T.Compose([
-        to_rgb,
-        pad_to_square,
-        T.Resize(size),
-        T.ToTensor(), 
-        normalize,
-    ])
-    val_aug     = T.Compose([
-        to_rgb,
-        pad_to_square,
-        T.Resize(size),
-        T.ToTensor(), 
-        normalize
-    ])
-
-    def transform(example, train=True):
-        # The dataset uses 'image' as the key for PIL images
-        example["pixel_values"] = train_aug(example["image"]) if train else val_aug(example["image"])
-        return example
+    transform = get_transform(processor, size)
 
     logger.info("Applying data transformations")
     train_dataset = dataset["train"].map(
@@ -205,7 +214,7 @@ if __name__ == "__main__":
     logger.info("Loading DINOv2 model")
     
     base = Dinov2ForImageClassification.from_pretrained(
-            "facebook/dinov2-base-imagenet1k-1-layer",
+            MODEL,
             num_labels=len(label_names),
             ignore_mismatched_sizes=True,
         )
