@@ -98,6 +98,7 @@ python train_model.py \
 ```
 python train_model.py \
     --epochs 0
+    --data_dir .data_out/PROD_font_dataset_top_20_20250716
     --checkpoint dinov2-fonts-with-subfonts/checkpoint-2752 \
     --huggingface_model_name your-user-name/your-model-name
 ```
