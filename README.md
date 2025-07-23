@@ -152,18 +152,6 @@ python train_model.py \
 
 The script will show how many parameters are being loaded vs. initialized.
 
-## Web service for model
-You can use `query_model.py` to serve the model as an HTTP service.
+## Handler.py
 
-You can run it locally
-```
-python query_model.py
-```
-
-This will start a server that you can query like this:
-```
-curl -X POST "http://localhost:8000/predict" \
-     -H "accept: application/json" \
-     -H "Content-Type: multipart/form-data" \
-     -F "file=@v4/dataset/test/BigShouldersText_Black/BigShouldersText_Black__dollar_638173.png"
-```
+The handler.py module allows for the HF Inference endpoint to preprocess inbound images in the same way that images were processed for training and testing. Without this the model will be running on production data that does not match the format it expects.

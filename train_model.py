@@ -2,7 +2,9 @@ import argparse
 import json
 import logging
 import os
+import shutil
 import tempfile
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -18,6 +20,8 @@ from transformers import (
     Trainer,
     TrainingArguments,
 )
+
+from handler import get_inference_transform
 
 logger = logging.getLogger(__name__)
 
@@ -116,31 +120,6 @@ def load_checkpoint_with_size_mismatch_handling(base_model, checkpoint_path, pef
         
         return model
 
-def get_inference_transform(processor: AutoImageProcessor, size: int):
-    """Get the raw validation transform for direct inference on PIL images."""
-    normalize   = T.Normalize(mean=processor.image_mean, std=processor.image_std)
-
-    to_rgb = T.Lambda(lambda img: img.convert('RGB'))
- 
-    def pad_to_square(img):
-        w, h = img.size
-        max_size = max(w, h)
-        pad_w = (max_size - w) // 2
-        pad_h = (max_size - h) // 2
-        padding = (pad_w, pad_h, max_size - w - pad_w, max_size - h - pad_h)
-        return T.Pad(padding, fill=0)(img)
-
-    aug     = T.Compose([
-        to_rgb,
-        pad_to_square,
-        T.Resize(size),
-        T.ToTensor(), 
-        normalize
-    ])
-
-    return aug
-    
-
 
 def get_transform(processor: AutoImageProcessor, size: int):
     aug = get_inference_transform(processor, size)
@@ -187,6 +166,11 @@ if __name__ == "__main__":
     train_dataset = None
     test_dataset = None
     
+
+    logger.info("Setting up image processor and augmentations")
+    processor   = AutoImageProcessor.from_pretrained(MODEL)  # 224 px
+    size        = processor.size["shortest_edge"]            # 224 by default
+    
     if args.epochs > 0:
         dataset = load_dataset(
             "imagefolder",
@@ -194,10 +178,6 @@ if __name__ == "__main__":
         )
         
         logger.info(f"Train size: {len(dataset['train'])}, Validation size: {len(dataset['test'])}")
-
-        logger.info("Setting up image processor and augmentations")
-        processor   = FontClassifierImageProcessor.from_pretrained(MODEL)  # 224 px
-        size        = processor.size["shortest_edge"]            # 224 by default
 
         transform = get_transform(processor, size)
 
@@ -330,6 +310,13 @@ if __name__ == "__main__":
             merged.config.pipeline_tag = "image-classification"
             merged.save_pretrained(tmp, safe_serialization=True)
             processor.save_pretrained(tmp)
+
+            # bundle handler and code
+            shutil.copy("handler.py", tmp)
+            Path(tmp, "requirements.txt").write_text("\n".join([
+                "torchvision>=0.19",
+                "Pillow>=10",
+            ]))
 
             HfApi().upload_folder(
                 repo_id=args.huggingface_model_name, 
