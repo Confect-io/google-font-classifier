@@ -27,26 +27,38 @@ ASCII_CHARS = (
 )
 
 FONT_ALLOWLIST = [
-"Lato",
-"Manrope",
-"Merriweather",
-"Montserrat",
-"Aleo",
-"Mulish",
-"Inter",
-"Nunito",
-"OpenSans",
-"Barlow",
-"Bitter",
-"Brawler",
-"Roboto",
+"BigShouldersText",
+"BricolageGrotesque",
+"CrimsonPro",
+"DMSans",
+"Geist",
+"HedvigLettersSerif",
+"InstrumentSans",
 "InstrumentSerif",
-"Spectral",
+"JetBrainsMono",
+"LexendDeca",
+"Lora",
+"Montserrat",
+"Newsreader",
+"NunitoSans",
+"Onest",
+"Petrona",
+"PlayfairDisplay",
+"PlusJakartaSans",
+"Poppins",
+"PT_Serif_Caption",
+"RethinkSans",
+"RobotoSerif",
+"ShipporiMincho",
+"Sora",
+"SpaceGrotesk",
+"Ultra",
+"Urbanist",
+"Inter",
 "WorkSans",
-"Raleway",
-"SourceCodePro",
-"Ubuntu",
-"NanumGothic",
+"Merriweather",
+"OpenSans",
+"Roboto",
 ]
 
 def font_is_variable(font_path: pathlib.Path) -> bool:
@@ -335,29 +347,47 @@ def build_dataset(font_dir, out_dir, chars, font_size, img_size, padding, no_clo
                 font_test_dir.mkdir(exist_ok=True)
 
                 ### Training set
-                for char in chars:
-                    if char in ['\n', '\t', ' ']:
-                        continue
-                    generate_image_for_string(char, font, font_train_dir)
-
-                for i in range(2,100):
-                    random_string = ''.join(random.choices(chars, k=i))
-                    # skip all whitespace strings
-                    if all(char in ' \n\t' for char in random_string):
-                        continue
-                    generate_image_for_string(random_string, font, font_train_dir)
-
                 ### Add random sentences from input_data
-                for _ in range(10):
+                for _ in range(500):
                     sentence = choose_sentence()
                     if sentence:
                         generate_image_for_string(sentence, font, font_train_dir)
 
+                ### Add random numbers
+                for _ in range(25):
+                    number = random.randint(1, 1000000)
+                    generate_image_for_string(f"{number}", font, font_train_dir)
+
+                ### Generate random dollar amounts
+                for _ in range(25):
+                    dollar_amount = random.randint(1, 1000000)
+                    generate_image_for_string(f"${dollar_amount}", font, font_train_dir)
+
+                ### Generate random percentage amounts
+                for _ in range(25):
+                    percentage = random.randint(0, 100)
+                    generate_image_for_string(f"{percentage}%", font, font_train_dir)
+
                 ### Test set
-                for _ in range(10):
+                for _ in range(25):
                     sentence = choose_sentence()
                     if sentence:
                         generate_image_for_string(sentence, font, font_test_dir)
+
+                ### Add random numbers
+                for _ in range(5):
+                    number = random.randint(1, 1000000)
+                    generate_image_for_string(f"{number}", font, font_test_dir)
+
+                ### Generate random dollar amounts
+                for _ in range(5):
+                    dollar_amount = random.randint(1, 1000000)
+                    generate_image_for_string(f"${dollar_amount}", font, font_test_dir)
+
+                ### Generate random percentage amounts
+                for _ in range(5):
+                    percentage = random.randint(0, 100)
+                    generate_image_for_string(f"{percentage}%", font, font_test_dir)
 
             
             if font_is_variable(font_path):
