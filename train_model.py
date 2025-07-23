@@ -4,11 +4,13 @@ import logging
 import os
 import tempfile
 
+import numpy as np
 import torch
 import torchvision.transforms as T
 from datasets import load_dataset
 from huggingface_hub import HfApi
 from peft import LoraConfig, PeftModel, get_peft_model
+from PIL import Image
 from safetensors import safe_open
 from transformers import (
     AutoImageProcessor,
@@ -145,7 +147,9 @@ def get_transform(processor: AutoImageProcessor, size: int):
 
     def transform(example, train=True):
         # The dataset uses 'image' as the key for PIL images
-        example["pixel_values"] = aug(example["image"])
+        # Use the processor directly - it handles pad_to_square + standard preprocessing
+        inputs = processor(images=example["image"], return_tensors="pt")
+        example["pixel_values"] = inputs["pixel_values"].squeeze(0)  # Remove batch dimension for dataset
         return example
 
     return transform
@@ -180,36 +184,40 @@ if __name__ == "__main__":
         raise ValueError(f"Expected at least 2 labels, got {label_names=}, imagefolder will not label the dataset if there are less than 2 labels.")
 
     # READ: the label ids assigned are in alphabetical order.
-    dataset = load_dataset(
-        "imagefolder",
-        data_dir=args.data_dir,
-    )
+    train_dataset = None
+    test_dataset = None
     
-    logger.info(f"Train size: {len(dataset['train'])}, Validation size: {len(dataset['test'])}")
+    if args.epochs > 0:
+        dataset = load_dataset(
+            "imagefolder",
+            data_dir=args.data_dir,
+        )
+        
+        logger.info(f"Train size: {len(dataset['train'])}, Validation size: {len(dataset['test'])}")
 
-    logger.info("Setting up image processor and augmentations")
-    processor   = AutoImageProcessor.from_pretrained(MODEL)  # 224 px
-    size        = processor.size["shortest_edge"]            # 224 by default
+        logger.info("Setting up image processor and augmentations")
+        processor   = FontClassifierImageProcessor.from_pretrained(MODEL)  # 224 px
+        size        = processor.size["shortest_edge"]            # 224 by default
 
-    transform = get_transform(processor, size)
+        transform = get_transform(processor, size)
 
-    logger.info("Applying data transformations")
-    train_dataset = dataset["train"].map(
-        lambda x: transform(x, train=True),
-        remove_columns=["image"],
-        desc="Transforming training data"
-    )
-    test_dataset = dataset["test"].map(
-        lambda x: transform(x, train=False),
-        remove_columns=["image"],
-        desc="Transforming test data"
-    )
-    
-    # Set the format to torch tensors
-    train_dataset.set_format(type="torch", columns=["pixel_values", "label"])
-    test_dataset.set_format(type="torch", columns=["pixel_values", "label"])
-    
-    logger.info("Data preprocessing complete")
+        logger.info("Applying data transformations")
+        train_dataset = dataset["train"].map(
+            lambda x: transform(x, train=True),
+            remove_columns=["image"],
+            desc="Transforming training data"
+        )
+        test_dataset = dataset["test"].map(
+            lambda x: transform(x, train=False),
+            remove_columns=["image"],
+            desc="Transforming test data"
+        )
+        
+        # Set the format to torch tensors
+        train_dataset.set_format(type="torch", columns=["pixel_values", "label"])
+        test_dataset.set_format(type="torch", columns=["pixel_values", "label"])
+        
+        logger.info("Data preprocessing complete")
 
     logger.info("Loading DINOv2 model")
     
@@ -262,9 +270,9 @@ if __name__ == "__main__":
         # Without it (especially with PEFT/LoRA wrappers), Trainer thinks there
         # are no labels, skips compute_metrics, and never logs eval_accuracy.
         label_names=["labels"],
-        eval_strategy      = "steps",
+        eval_strategy      = "steps" if args.epochs > 0 else "no",
         eval_steps         = 500,
-        save_strategy      = "steps",
+        save_strategy      = "steps" if args.epochs > 0 else "no",
         save_steps         = 500,
         num_train_epochs   = args.epochs,
         learning_rate      = args.learning_rate,
@@ -293,7 +301,9 @@ if __name__ == "__main__":
     logger.info("Starting training")
     if args.checkpoint:
         logger.info(f"Resuming training from checkpoint: {args.checkpoint}")
-    trainer.train()
+    
+    if args.epochs > 0:
+        trainer.train()
     logger.info("Training complete")
     
     # Saves the result model to the output directory
