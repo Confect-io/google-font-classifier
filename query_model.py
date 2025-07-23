@@ -1,34 +1,97 @@
-import os
+import io
 
-import requests
+import torch
+import torchvision.transforms as T
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.responses import JSONResponse
+from PIL import Image
+from transformers import AutoImageProcessor, Dinov2ForImageClassification
 
-API_URL = "https://uyta9gge1o9rxpdq.us-east-1.aws.endpoints.huggingface.cloud"
-headers = {
-	"Accept" : "application/json",
-	"Authorization": f"Bearer {os.getenv('HUGGINGFACE_API_KEY')}",
-	"Content-Type": "image/jpeg" 
-}
+# Import the inference transform function from train_model.py
+from train_model import get_inference_transform
 
-def query(filename):
-	with open(filename, "rb") as f:
-		data = f.read()
-	response = requests.post(API_URL, headers=headers, data=data)
-	return response.json()
+# Initialize FastAPI app
+app = FastAPI(title="Font Classifier API", description="API for classifying font types from images")
 
-matches = 0
-total = 0
+hf_model_name = "dchen0/font-classifier-v4"
 
-for label in os.listdir("v4/dataset/test"):
-	for image in os.listdir(f"v4/dataset/test/{label}"):
-		output = query(f"v4/dataset/test/{label}/{image}")
-		# [{"label": "Arial", "score": 0.9999999999999999}, {"label": "Times New Roman", "score": 0.0000000000000001}]
+# Regular model loading from HuggingFace
+model = Dinov2ForImageClassification.from_pretrained(
+    hf_model_name,
+    ignore_mismatched_sizes=True,
+)
+processor = AutoImageProcessor.from_pretrained(hf_model_name)
 
-		output_label = output[0]["label"]
+# Set model to evaluation mode
+model.eval()
 
-		if output_label == label:
-			matches += 1
-		else:
-			print(f"Bad: v4/dataset/test/{label}/{image}")
-		total += 1
+# Create the transform pipeline that matches training
+size = processor.size["shortest_edge"]  # Should be 224
+transform = get_inference_transform(processor, size)
 
-		print(f"{matches}/{total}")
+def predict_font(image: Image.Image):
+    """Helper function to predict font from PIL Image"""
+    try:
+        # Convert image to RGB if not already
+        image = image.convert('RGB')
+        
+        # Apply the same transformations as during training
+        pixel_values = transform(image).unsqueeze(0)  # Add batch dimension
+
+        # Perform inference
+        with torch.no_grad():
+            outputs = model(pixel_values=pixel_values)
+            logits = outputs.logits
+
+        # Get prediction probabilities
+        label_names = model.config.id2label
+        predictions = torch.softmax(logits, dim=-1)
+        top_5_indices = torch.topk(logits, k=5).indices.tolist()[0]
+        
+        # Format results with confidence scores
+        results = []
+        for idx in top_5_indices:
+            label = label_names[idx]
+            score = float(predictions[0][idx])
+            results.append({
+                "label": label,
+                "score": score
+            })
+        
+        return results  # Return top 5
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing image: {str(e)}")
+
+@app.get("/")
+async def root():
+    """Health check endpoint"""
+    return {"message": "Font Classifier API is running"}
+
+@app.post("/predict")
+async def predict_font_endpoint(file: UploadFile = File(...)):
+    """
+    Upload an image and get font classification prediction
+    """
+    # Validate file type
+    if not file.content_type.startswith('image/'):
+        raise HTTPException(status_code=400, detail="File must be an image")
+    
+    try:
+        # Read image data
+        image_data = await file.read()
+        image = Image.open(io.BytesIO(image_data))
+        
+        # Get prediction
+        predictions = predict_font(image)
+        
+        return predictions
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error processing file: {str(e)}")
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+
