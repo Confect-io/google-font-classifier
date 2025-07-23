@@ -113,8 +113,9 @@ def load_checkpoint_with_size_mismatch_handling(base_model, checkpoint_path, pef
         logger.info("Missing keys (likely new classifier parameters): will be randomly initialized")
         
         return model
-    
-def get_transform(processor: AutoImageProcessor, size: int):
+
+def get_inference_transform(processor: AutoImageProcessor, size: int):
+    """Get the raw validation transform for direct inference on PIL images."""
     normalize   = T.Normalize(mean=processor.image_mean, std=processor.image_std)
 
     to_rgb = T.Lambda(lambda img: img.convert('RGB'))
@@ -127,14 +128,7 @@ def get_transform(processor: AutoImageProcessor, size: int):
         padding = (pad_w, pad_h, max_size - w - pad_w, max_size - h - pad_h)
         return T.Pad(padding, fill=0)(img)
 
-    train_aug   = T.Compose([
-        to_rgb,
-        pad_to_square,
-        T.Resize(size),
-        T.ToTensor(), 
-        normalize,
-    ])
-    val_aug     = T.Compose([
+    aug     = T.Compose([
         to_rgb,
         pad_to_square,
         T.Resize(size),
@@ -142,13 +136,19 @@ def get_transform(processor: AutoImageProcessor, size: int):
         normalize
     ])
 
+    return aug
+    
+
+
+def get_transform(processor: AutoImageProcessor, size: int):
+    aug = get_inference_transform(processor, size)
+
     def transform(example, train=True):
         # The dataset uses 'image' as the key for PIL images
-        example["pixel_values"] = train_aug(example["image"]) if train else val_aug(example["image"])
+        example["pixel_values"] = aug(example["image"])
         return example
 
     return transform
-    
 
 
 if __name__ == "__main__":
@@ -179,7 +179,7 @@ if __name__ == "__main__":
     if len(label_names) <= 1:
         raise ValueError(f"Expected at least 2 labels, got {label_names=}, imagefolder will not label the dataset if there are less than 2 labels.")
 
-    # READ: the label ids assigned are in alphbetical order.
+    # READ: the label ids assigned are in alphabetical order.
     dataset = load_dataset(
         "imagefolder",
         data_dir=args.data_dir,

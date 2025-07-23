@@ -3,9 +3,13 @@ import os
 import sys
 
 import torch
+import torchvision.transforms as T
 from peft import PeftModel
 from PIL import Image
 from transformers import AutoImageProcessor, Dinov2ForImageClassification
+
+# Import the inference transform function from train_model.py
+from train_model import get_inference_transform
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:
@@ -27,13 +31,19 @@ if __name__ == "__main__":
     # Set model to evaluation mode
     model.eval()
 
-    # Load and process the image
+    # Create the transform pipeline that matches training
+    size = processor.size["shortest_edge"]  # Should be 224
+    transform = get_inference_transform(processor, size)
+
+    # Load and process the image using the same pipeline as training
     image = Image.open(image_path).convert('RGB')
-    inputs = processor(images=image, return_tensors="pt")
+    
+    # Apply the same transformations as during training
+    pixel_values = transform(image).unsqueeze(0)  # Add batch dimension
     
     # Perform inference
     with torch.no_grad():
-        outputs = model(pixel_values=inputs['pixel_values'])
+        outputs = model(pixel_values=pixel_values)
         logits = outputs.logits
 
     # Get prediction probabilities
