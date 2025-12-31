@@ -11,8 +11,8 @@ git clone --filter=blob:none --depth 1 https://github.com/google/fonts.git
 
 ```
 python dataset_generator.py \
-    --font_dir ../fonts/ofl \
-    --out_dir .data_out/glyphs224 \
+    --font_dir <wherever the Google fonts are downloaded to> \
+    --out_dir <output folder> \
     --chars ascii \
     --img_size 224 \
     --font_size 1024 \
@@ -34,7 +34,7 @@ python3 -m pip install tqdm pillow fontTools
 
 3. Clean the dataset:
 ```
-python dataset_cleaner.py glyphs224
+python dataset_cleaner.py <dataset folder>
 ```
 
 This will print any bad image paths that you can manually inspect and remove (in expectation, only 1/225000 should be malformed).
@@ -44,7 +44,7 @@ This will print any bad image paths that you can manually inspect and remove (in
 You can upload the dataset to huggingface as follows:
 
 ```
-huggingface-cli upload-large-folder dchen0/font_crops glyphs224_with_subfonts --repo-type=dataset
+huggingface-cli upload-large-folder <HuggingFace Username>/<Repo name> <path to folder> --repo-type=dataset
 ```
 
 To get huggingface-cli, run
@@ -65,8 +65,8 @@ Then, train the model on the cleaned dataset ex:
 
 ```
 python train_model.py \
-    --data_dir glyphs224 \     
-    --output_dir ./data_out/dinov2-fonts \
+    --data_dir <processed training + test data folder> \     
+    --output_dir <where to output your model tensors to> \
     --batch_size 32 \
     --epochs 100 \
     --learning_rate 1e-4 \
@@ -80,7 +80,7 @@ python train_model.py \
 Checkpoints and final model results will be saved in the output directory:
 
 ```
-$ ls dinov2-fonts-with-subfonts
+$ ls <output model dir>
 checkpoint-2500 checkpoint-2752 logs
 ```
 
@@ -88,7 +88,7 @@ The outputs include the LoRA weights and classification head weights, so trainin
 
 ```
 python train_model.py \
-    --checkpoint dinov2-fonts-with-subfonts/checkpoint-2752 \
+    --checkpoint <output model dir>/checkpoint-2752 \
     ...
 ```
 
@@ -98,9 +98,9 @@ python train_model.py \
 ```
 python train_model.py \
     --epochs 0
-    --data_dir .data_out/PROD_font_dataset_top_20_20250716
-    --checkpoint dinov2-fonts-with-subfonts/checkpoint-2752 \
-    --huggingface_model_name your-user-name/your-model-name
+    --data_dir <input data dir> \
+    --checkpoint <output model name>/checkpoint-2752 \
+    --huggingface_model_name <your user name>/<your repo name>
 ```
 
 You can modify the model repo via git:
