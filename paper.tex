@@ -17,6 +17,16 @@
 \usepackage{subcaption}
 \usepackage{enumitem}
 
+% ---- Auto-generated metrics from confusion_matrix.py ----
+\InputIfFileExists{figures/metrics.tex}{}{%
+  \newcommand{\nMisclass}{--}
+  \newcommand{\nTotal}{--}
+  \newcommand{\meanMisclassSeverity}{--}
+  \newcommand{\swerValue}{--}
+  \newcommand{\swerRandom}{--}
+  \newcommand{\swerRelative}{--}
+}
+
 \hypersetup{
     colorlinks=true,
     linkcolor=blue,
@@ -287,11 +297,11 @@ Table~\ref{tab:severity} reports the severity-weighted metrics. The model's SWER
 \toprule
 \textbf{Metric} & \textbf{Value} \\
 \midrule
-Misclassifications & \texttt{XX / XX} \\
-Mean misclassification severity & \texttt{X.XXXX} \\
-Severity-weighted error rate (SWER) & \texttt{X.XXXX} \\
-Random baseline SWER & \texttt{X.XXXX} \\
-Relative severity (SWER / random) & \texttt{X.XXXX} \\
+Misclassifications & \nMisclass{} / \nTotal{} \\
+Mean misclassification severity & \meanMisclassSeverity{} \\
+Severity-weighted error rate (SWER) & \swerValue{} \\
+Random baseline SWER & \swerRandom{} \\
+Relative severity (SWER / random) & \swerRelative{} \\
 \bottomrule
 \end{tabular}
 \end{table}

@@ -598,9 +598,21 @@ def main():
     print(f"  Mean misclassification severity: {severity['mean_misclass_severity']:.4f}  (0=same class, 1=maximally distant)")
     print(f"  Severity-weighted error rate:    {severity['severity_weighted_error']:.4f}")
     print(f"  Random baseline error rate:      {severity['random_baseline_severity']:.4f}")
+    relative = 0.0
     if severity['random_baseline_severity'] > 0:
         relative = severity['severity_weighted_error'] / severity['random_baseline_severity']
         print(f"  Relative severity (vs random):   {relative:.4f}")
+
+    # Write LaTeX macros so paper.tex picks up the values automatically
+    metrics_path = os.path.join(args.output_dir, "metrics.tex")
+    with open(metrics_path, "w") as f:
+        f.write(f"\\newcommand{{\\nMisclass}}{{{severity['n_misclassifications']}}}\n")
+        f.write(f"\\newcommand{{\\nTotal}}{{{severity['n_total']}}}\n")
+        f.write(f"\\newcommand{{\\meanMisclassSeverity}}{{{severity['mean_misclass_severity']:.4f}}}\n")
+        f.write(f"\\newcommand{{\\swerValue}}{{{severity['severity_weighted_error']:.4f}}}\n")
+        f.write(f"\\newcommand{{\\swerRandom}}{{{severity['random_baseline_severity']:.4f}}}\n")
+        f.write(f"\\newcommand{{\\swerRelative}}{{{relative:.4f}}}\n")
+    print(f"  Saved {metrics_path}")
 
 
 if __name__ == "__main__":
