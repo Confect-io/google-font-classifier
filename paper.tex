@@ -19,15 +19,11 @@
 
 % ---- Auto-generated metrics from confusion_matrix.py ----
 \InputIfFileExists{figures/metrics.tex}{}{%
-  \newcommand{\nMisclass}{--}
-  \newcommand{\nTotal}{--}
-  \newcommand{\meanMisclassSeverity}{--}
   \newcommand{\swerValue}{--}
   \newcommand{\swerRandom}{--}
   \newcommand{\swerRelative}{--}
   \newcommand{\rawAccuracy}{--}
   \newcommand{\familyAccuracy}{--}
-  \newcommand{\severityWeightedAccuracy}{--}
 }
 
 \hypersetup{
@@ -272,43 +268,43 @@ We compute a full confusion matrix across all classes to analyze per-class perfo
 \end{figure}
 
 \paragraph{Severity-weighted error analysis.}
-Top-1 accuracy treats all misclassifications equally, but confusing two adjacent weights of the same family (e.g., Roboto-400 vs.\ Roboto-500) is far less severe than confusing a serif with a sans-serif. To capture this, we define a \emph{severity-weighted error rate} that uses the model's own learned representations to quantify how wrong each misclassification is.
+Top-1 accuracy treats all misclassifications equally, but confusing two adjacent weights of the same family (e.g., Roboto-400 vs.\ Roboto-500) is far less severe than confusing a serif with a sans-serif. We introduce two complementary metrics that capture this distinction.
 
-For each of the $K = 394$ classes, we compute a centroid $\mathbf{c}_k$ by averaging the \texttt{[CLS]} token embeddings (from the final hidden layer) of all test samples belonging to class~$k$. We then compute the pairwise cosine distance between all centroids:
+\subparagraph{Family-level accuracy.}
+The simplest correction: collapse all weight variants into their parent family and score a prediction as correct if the predicted and true labels share the same family, regardless of weight. The gap between variant-level and family-level accuracy directly quantifies how much of the raw error rate is due to within-family weight confusion versus genuine cross-family misidentification.
+
+\subparagraph{Relative severity.}
+For a continuous measure, we define a \emph{severity-weighted error rate} (SWER) using the model's own learned representations. For each of the $K = 394$ classes, we compute a centroid $\mathbf{c}_k$ by averaging the \texttt{[CLS]} token embeddings (from the final hidden layer) of all test samples belonging to class~$k$. The pairwise cosine distance between centroids is:
 \begin{equation}
     d(i, j) = 1 - \frac{\mathbf{c}_i \cdot \mathbf{c}_j}{\|\mathbf{c}_i\| \, \|\mathbf{c}_j\|}
 \end{equation}
-and normalize by the maximum observed distance so that $d \in [0, 1]$.
-
-Given a prediction $\hat{y}$ for a sample with true label $y$, the \emph{severity} of that prediction is:
-\begin{equation}
-    s(y, \hat{y}) = \begin{cases} 0 & \text{if } \hat{y} = y \\ d(y, \hat{y}) & \text{otherwise} \end{cases}
-\end{equation}
-The \emph{severity-weighted error rate} is then the mean severity across all $N$ test predictions:
+For each prediction, the severity is $s(y, \hat{y}) = 0$ if correct and $d(y, \hat{y})$ otherwise. The SWER is the mean severity across all $N$ test predictions:
 \begin{equation}
     \text{SWER} = \frac{1}{N} \sum_{n=1}^{N} s(y_n, \hat{y}_n)
 \end{equation}
-This metric is 0 for a perfect classifier and increases with both the number and the perceptual severity of errors. As a calibration baseline, we compute the expected SWER under uniform random predictions: $\text{SWER}_{\text{random}} = \frac{1}{K^2} \sum_{i,j} d(i,j)$. The ratio $\text{SWER} / \text{SWER}_{\text{random}}$ measures how severe the model's errors are relative to chance.
+The absolute value of SWER depends on an arbitrary choice of distance normalization and is therefore not directly interpretable. However, the \emph{relative severity}---the ratio of the model's SWER to the expected SWER under uniform random predictions---is a dimensionless quantity that cancels the normalization constant, analogous to forming a dimensionless group in the Buckingham Pi theorem:
+\begin{equation}
+    \Pi = \frac{\text{SWER}}{\text{SWER}_{\text{random}}}, \qquad
+    \text{SWER}_{\text{random}} = \frac{1}{K^2} \sum_{i,j} d(i,j)
+\end{equation}
+This ratio is invariant to any linear rescaling of the distance matrix: if all distances are multiplied by a constant $\alpha$, both numerator and denominator scale by $\alpha$ and the ratio is unchanged. A value of $\Pi = 0$ indicates a perfect classifier; $\Pi = 1$ indicates errors as severe as random guessing.
 
-Table~\ref{tab:severity} reports the severity-weighted metrics alongside \emph{family-level accuracy}, which collapses all weight variants into their parent family---a prediction is correct at the family level if the predicted and true labels belong to the same font family, regardless of weight. The gap between variant-level and family-level accuracy directly quantifies how much of the raw error rate is due to within-family weight confusion versus cross-family misidentification. The severity-weighted accuracy ($1 - \text{SWER}$) provides a softer, continuous view of the same phenomenon, though its absolute value depends on the embedding distance normalization. The relative severity ratio further shows that the model's errors carry only a fraction of the cost of random guessing---when the model is wrong, it errs toward visually similar classes rather than distant ones.
+Table~\ref{tab:severity} reports both metrics. Family-level accuracy confirms that most errors are within-family weight confusions. The relative severity $\Pi$ provides a continuous, scale-invariant confirmation: the model's errors carry only a fraction of the cost expected from random predictions.
 
 \begin{table}[h]
 \centering
-\caption{Severity-weighted error analysis. Severity is the normalized cosine distance between \texttt{[CLS]} embedding centroids of the true and predicted classes (0 = correct, 1 = maximally distant).}
+\caption{Error severity analysis. Family-level accuracy collapses weight variants; relative severity $\Pi$ is a scale-invariant ratio of the model's embedding-distance-weighted error to the random baseline.}
 \label{tab:severity}
 \begin{tabular}{lr}
 \toprule
 \textbf{Metric} & \textbf{Value} \\
 \midrule
-Misclassifications & \nMisclass{} / \nTotal{} \\
-Mean misclassification severity & \meanMisclassSeverity{} \\
-Severity-weighted error rate (SWER) & \swerValue{} \\
-Random baseline SWER & \swerRandom{} \\
-Relative severity (SWER / random) & \swerRelative{} \\
-\midrule
 Top-1 accuracy (variant-level) & \rawAccuracy{} \\
 \textbf{Family-level accuracy} & \textbf{\familyAccuracy{}} \\
-Severity-weighted accuracy ($1 - \text{SWER}$) & \severityWeightedAccuracy{} \\
+\midrule
+SWER (model) & \swerValue{} \\
+SWER (random baseline) & \swerRandom{} \\
+\textbf{Relative severity} $\Pi$ & \textbf{\swerRelative{}} \\
 \bottomrule
 \end{tabular}
 \end{table}
