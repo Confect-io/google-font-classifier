@@ -25,6 +25,9 @@
   \newcommand{\swerValue}{--}
   \newcommand{\swerRandom}{--}
   \newcommand{\swerRelative}{--}
+  \newcommand{\rawAccuracy}{--}
+  \newcommand{\familyAccuracy}{--}
+  \newcommand{\severityWeightedAccuracy}{--}
 }
 
 \hypersetup{
@@ -287,7 +290,7 @@ The \emph{severity-weighted error rate} is then the mean severity across all $N$
 \end{equation}
 This metric is 0 for a perfect classifier and increases with both the number and the perceptual severity of errors. As a calibration baseline, we compute the expected SWER under uniform random predictions: $\text{SWER}_{\text{random}} = \frac{1}{K^2} \sum_{i,j} d(i,j)$. The ratio $\text{SWER} / \text{SWER}_{\text{random}}$ measures how severe the model's errors are relative to chance.
 
-Table~\ref{tab:severity} reports the severity-weighted metrics. The model's SWER is far below the random baseline, and the relative severity ratio shows that the model's errors carry only a small fraction of the cost of random guessing. Put differently: while 14\% of predictions are incorrect by top-1 accuracy, those errors are overwhelmingly between near-identical font weights, not between typographically distant families.
+Table~\ref{tab:severity} reports the severity-weighted metrics alongside \emph{family-level accuracy}, which collapses all weight variants into their parent family---a prediction is correct at the family level if the predicted and true labels belong to the same font family, regardless of weight. The gap between variant-level and family-level accuracy directly quantifies how much of the raw error rate is due to within-family weight confusion versus cross-family misidentification. The severity-weighted accuracy ($1 - \text{SWER}$) provides a softer, continuous view of the same phenomenon, though its absolute value depends on the embedding distance normalization. The relative severity ratio further shows that the model's errors carry only a fraction of the cost of random guessing---when the model is wrong, it errs toward visually similar classes rather than distant ones.
 
 \begin{table}[h]
 \centering
@@ -302,6 +305,10 @@ Mean misclassification severity & \meanMisclassSeverity{} \\
 Severity-weighted error rate (SWER) & \swerValue{} \\
 Random baseline SWER & \swerRandom{} \\
 Relative severity (SWER / random) & \swerRelative{} \\
+\midrule
+Top-1 accuracy (variant-level) & \rawAccuracy{} \\
+\textbf{Family-level accuracy} & \textbf{\familyAccuracy{}} \\
+Severity-weighted accuracy ($1 - \text{SWER}$) & \severityWeightedAccuracy{} \\
 \bottomrule
 \end{tabular}
 \end{table}

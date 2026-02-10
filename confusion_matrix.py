@@ -451,14 +451,18 @@ def compute_severity_metrics(y_true, y_pred, all_labels, dist_matrix):
     label_to_idx = {l: i for i, l in enumerate(all_labels)}
     severities = []
     misclass_severities = []
+    family_correct = 0
 
     for true, pred in zip(y_true, y_pred):
         if true == pred:
             severities.append(0.0)
+            family_correct += 1
         else:
             d = dist_matrix[label_to_idx[true], label_to_idx[pred]]
             severities.append(d)
             misclass_severities.append(d)
+            if extract_family(true) == extract_family(pred):
+                family_correct += 1
 
     n = len(all_labels)
     # Expected severity under uniform random predictions (mean of full distance matrix)
@@ -470,6 +474,7 @@ def compute_severity_metrics(y_true, y_pred, all_labels, dist_matrix):
         "mean_misclass_severity": np.mean(misclass_severities) if misclass_severities else 0.0,
         "severity_weighted_error": np.mean(severities),
         "random_baseline_severity": random_baseline,
+        "family_accuracy": family_correct / len(y_true),
     }
 
 
@@ -593,6 +598,9 @@ def main():
     # --- Metrics ---
     print_metrics(y_true, y_pred, all_labels)
 
+    raw_acc = 1.0 - severity['n_misclassifications'] / severity['n_total']
+    swa = 1.0 - severity['severity_weighted_error']
+
     print("\n--- Severity-Weighted Error Analysis ---")
     print(f"  Misclassifications:             {severity['n_misclassifications']}/{severity['n_total']}")
     print(f"  Mean misclassification severity: {severity['mean_misclass_severity']:.4f}  (0=same class, 1=maximally distant)")
@@ -602,6 +610,9 @@ def main():
     if severity['random_baseline_severity'] > 0:
         relative = severity['severity_weighted_error'] / severity['random_baseline_severity']
         print(f"  Relative severity (vs random):   {relative:.4f}")
+    print(f"  Top-1 accuracy:                  {raw_acc:.1%}")
+    print(f"  Family-level accuracy:           {severity['family_accuracy']:.1%}")
+    print(f"  Severity-weighted accuracy:      {swa:.1%}")
 
     # Write LaTeX macros so paper.tex picks up the values automatically
     metrics_path = os.path.join(args.output_dir, "metrics.tex")
@@ -612,6 +623,9 @@ def main():
         f.write(f"\\newcommand{{\\swerValue}}{{{severity['severity_weighted_error']:.4f}}}\n")
         f.write(f"\\newcommand{{\\swerRandom}}{{{severity['random_baseline_severity']:.4f}}}\n")
         f.write(f"\\newcommand{{\\swerRelative}}{{{relative:.4f}}}\n")
+        f.write(f"\\newcommand{{\\rawAccuracy}}{{{raw_acc:.1%}}}\n")
+        f.write(f"\\newcommand{{\\familyAccuracy}}{{{severity['family_accuracy']:.1%}}}\n")
+        f.write(f"\\newcommand{{\\severityWeightedAccuracy}}{{{swa:.1%}}}\n")
     print(f"  Saved {metrics_path}")
 
 
