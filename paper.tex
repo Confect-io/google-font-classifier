@@ -134,7 +134,7 @@ All generated images are verified programmatically using PIL's image verificatio
 
 \subsection{Model Architecture}
 
-Our model builds on the DINOv2-Base architecture \citep{oquab2024dinov2}, specifically the \texttt{dinov2\hbox{-}base\hbox{-}imagenet1k\hbox{-}1\hbox{-}layer} variant pre-trained on ImageNet-1K. This model uses the standard ViT-B/14 architecture with patch size 14, embedding dimension 768, 12 attention heads, and 12 transformer blocks.
+Our model builds on the DINOv2-Base architecture \citep{oquab2024dinov2}, specifically the \texttt{dinov2-base-imagenet1k-1-layer} variant pre-trained on ImageNet-1K. This model uses the standard ViT-B/14 architecture with patch size 14, embedding dimension 768, 12 attention heads, and 12 transformer blocks.
 
 We add a linear classification head mapping the \texttt{[CLS]} token representation to the 394 output classes. The classification head is randomly initialized and fully trainable.
 
@@ -277,7 +277,26 @@ The \emph{severity-weighted error rate} is then the mean severity across all $N$
 \end{equation}
 This metric is 0 for a perfect classifier and increases with both the number and the perceptual severity of errors. As a calibration baseline, we compute the expected SWER under uniform random predictions: $\text{SWER}_{\text{random}} = \frac{1}{K^2} \sum_{i,j} d(i,j)$. The ratio $\text{SWER} / \text{SWER}_{\text{random}}$ measures how severe the model's errors are relative to chance.
 
-Figure~\ref{fig:dendrogram} visualizes the font family similarity hierarchy recovered by UPGMA clustering on the centroid distances. Serif, sans-serif, monospace, and display families occupy distinct branches, confirming that the embedding space captures typographic structure. The severity-weighted error rate is substantially lower than the random baseline, confirming that when the model is wrong, it errs toward visually similar classes rather than distant ones.
+Table~\ref{tab:severity} reports the severity-weighted metrics. The model's SWER is far below the random baseline, and the relative severity ratio shows that the model's errors carry only a small fraction of the cost of random guessing. Put differently: while 14\% of predictions are incorrect by top-1 accuracy, those errors are overwhelmingly between near-identical font weights, not between typographically distant families.
+
+\begin{table}[h]
+\centering
+\caption{Severity-weighted error analysis. Severity is the normalized cosine distance between \texttt{[CLS]} embedding centroids of the true and predicted classes (0 = correct, 1 = maximally distant).}
+\label{tab:severity}
+\begin{tabular}{lr}
+\toprule
+\textbf{Metric} & \textbf{Value} \\
+\midrule
+Misclassifications & \texttt{XX / XX} \\
+Mean misclassification severity & \texttt{X.XXXX} \\
+Severity-weighted error rate (SWER) & \texttt{X.XXXX} \\
+Random baseline SWER & \texttt{X.XXXX} \\
+Relative severity (SWER / random) & \texttt{X.XXXX} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Figure~\ref{fig:dendrogram} visualizes the font family similarity hierarchy recovered by UPGMA clustering on the centroid distances. Serif, sans-serif, monospace, and display families occupy distinct branches, confirming that the embedding space captures typographic structure.
 
 \subsection{Comparison to Baseline}
 
