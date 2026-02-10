@@ -259,7 +259,25 @@ We compute a full confusion matrix across all classes to analyze per-class perfo
 \end{figure}
 
 \paragraph{Severity-weighted error analysis.}
-Top-1 accuracy treats all misclassifications equally, but confusing two adjacent weights of the same family (e.g., Roboto-400 vs.\ Roboto-500) is far less severe than confusing a serif with a sans-serif. We define a severity-weighted error metric using the model's own learned representations: for each prediction, the severity is the normalized cosine distance between the \texttt{[CLS]} embedding centroids of the true and predicted classes (0 for correct predictions, higher for more dissimilar confusions). Figure~\ref{fig:dendrogram} shows the resulting font family hierarchy recovered by UPGMA clustering on these distances. The severity-weighted error rate is substantially lower than the rate expected under uniform random predictions, confirming that the model's errors are concentrated among visually similar classes.
+Top-1 accuracy treats all misclassifications equally, but confusing two adjacent weights of the same family (e.g., Roboto-400 vs.\ Roboto-500) is far less severe than confusing a serif with a sans-serif. To capture this, we define a \emph{severity-weighted error rate} that uses the model's own learned representations to quantify how wrong each misclassification is.
+
+For each of the $K = 394$ classes, we compute a centroid $\mathbf{c}_k$ by averaging the \texttt{[CLS]} token embeddings (from the final hidden layer) of all test samples belonging to class~$k$. We then compute the pairwise cosine distance between all centroids:
+\begin{equation}
+    d(i, j) = 1 - \frac{\mathbf{c}_i \cdot \mathbf{c}_j}{\|\mathbf{c}_i\| \, \|\mathbf{c}_j\|}
+\end{equation}
+and normalize by the maximum observed distance so that $d \in [0, 1]$.
+
+Given a prediction $\hat{y}$ for a sample with true label $y$, the \emph{severity} of that prediction is:
+\begin{equation}
+    s(y, \hat{y}) = \begin{cases} 0 & \text{if } \hat{y} = y \\ d(y, \hat{y}) & \text{otherwise} \end{cases}
+\end{equation}
+The \emph{severity-weighted error rate} is then the mean severity across all $N$ test predictions:
+\begin{equation}
+    \text{SWER} = \frac{1}{N} \sum_{n=1}^{N} s(y_n, \hat{y}_n)
+\end{equation}
+This metric is 0 for a perfect classifier and increases with both the number and the perceptual severity of errors. As a calibration baseline, we compute the expected SWER under uniform random predictions: $\text{SWER}_{\text{random}} = \frac{1}{K^2} \sum_{i,j} d(i,j)$. The ratio $\text{SWER} / \text{SWER}_{\text{random}}$ measures how severe the model's errors are relative to chance.
+
+Figure~\ref{fig:dendrogram} visualizes the font family similarity hierarchy recovered by UPGMA clustering on the centroid distances. Serif, sans-serif, monospace, and display families occupy distinct branches, confirming that the embedding space captures typographic structure. The severity-weighted error rate is substantially lower than the random baseline, confirming that when the model is wrong, it errs toward visually similar classes rather than distant ones.
 
 \subsection{Comparison to Baseline}
 
