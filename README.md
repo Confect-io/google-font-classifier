@@ -152,6 +152,50 @@ python train_model.py \
 
 The script will show how many parameters are being loaded vs. initialized.
 
+## Evaluation & Confusion Matrix
+
+To evaluate the model on a test set and generate paper-ready figures:
+
+```bash
+python confusion_matrix.py \
+    --data_dir .data_out/PROD_font_dataset_top_20_20250716 \
+    --model dchen0/font_classifier_v4
+```
+
+This produces:
+- `figures/confusion_matrix.pdf` — Row-normalized confusion matrix heatmap grouped by font family
+- `figures/top_confused_pairs.pdf` — Bar chart of the top-N most frequent misclassification pairs
+- `confusion_matrix.json` — Full confusion matrix as a nested dict of counts
+- `bad_images.json` — List of all misclassified images with true/predicted labels
+- Per-class precision, recall, and F1 printed to stdout
+
+Additional options:
+- `--batch_size 32` — Batch size for inference (default: 32)
+- `--top_n 20` — Number of confused pairs to plot (default: 20)
+- `--output_dir figures` — Directory for output figures (default: figures)
+
+Requires `scikit-learn` and `matplotlib` (listed in `requirements.txt`).
+
+## Paper
+
+Build the paper (runs evaluation then compiles LaTeX):
+
+```bash
+bash build_paper.sh
+```
+
+To skip the confusion matrix step and only compile LaTeX:
+
+```bash
+bash build_paper.sh --skip-matrix
+```
+
+Extra arguments are forwarded to `confusion_matrix.py`:
+
+```bash
+bash build_paper.sh --data_dir .data_out/my_dataset --model dchen0/font_classifier_v4
+```
+
 ## Handler.py
 
 The handler.py module allows for the HF Inference endpoint to preprocess inbound images in the same way that images were processed for training and testing. Without this the model will be running on production data that does not match the format it expects.
