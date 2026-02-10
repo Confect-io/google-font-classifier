@@ -59,6 +59,8 @@ Our contributions are as follows:
     \item An end-to-end system with built-in preprocessing that ensures consistency between training and deployment, released as an open-source model and dataset on HuggingFace.
 \end{enumerate}
 
+This model serves as a component of Anything,\footnote{\url{https://anything.com}} which achieved the \#1 ranking on Design Arena's builders leaderboard,\footnote{\url{https://www.designarena.ai/leaderboard/builder}} a crowdsourced benchmark for AI-generated design with over 150{,}000 voters.
+
 % ---- 2. Related Work ----
 \section{Related Work}
 
@@ -120,12 +122,19 @@ The resulting dataset, \texttt{font\_crops\_v4},\footnote{\url{https://huggingfa
 
 All generated images are verified programmatically using PIL's image verification to detect and remove corrupted files. Filenames are sanitized to handle special characters that may cause filesystem issues across platforms.
 
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\textwidth]{figures/sample_images.pdf}
+    \caption{Sample test images from four font families spanning different typographic categories: serif (Crimson Pro), sans-serif (Inter), monospace (JetBrains Mono), and display (Big Shoulders Text). Each column shows a different weight variant. These are the actual rendered images seen by the model at inference time, including color augmentation and noise.}
+    \label{fig:sample_images}
+\end{figure}
+
 % ---- 4. Method ----
 \section{Method}
 
 \subsection{Model Architecture}
 
-Our model builds on the DINOv2-Base architecture \citep{oquab2024dinov2}, specifically the \texttt{dinov2-base-imagenet1k-1-layer} variant pre-trained on ImageNet-1K. This model uses the standard ViT-B/14 architecture with patch size 14, embedding dimension 768, 12 attention heads, and 12 transformer blocks.
+Our model builds on the DINOv2-Base architecture \citep{oquab2024dinov2}, specifically the \texttt{dinov2\hbox{-}base\hbox{-}imagenet1k\hbox{-}1\hbox{-}layer} variant pre-trained on ImageNet-1K. This model uses the standard ViT-B/14 architecture with patch size 14, embedding dimension 768, 12 attention heads, and 12 transformer blocks.
 
 We add a linear classification head mapping the \texttt{[CLS]} token representation to the 394 output classes. The classification head is randomly initialized and fully trainable.
 
@@ -217,6 +226,40 @@ We compute a full confusion matrix across all classes to analyze per-class perfo
     \caption{Top-20 most frequent misclassification pairs. The majority involve adjacent weight variants within the same font family, confirming that inter-family classification is near-perfect.}
     \label{fig:top_confused_pairs}
 \end{figure}
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\textwidth]{figures/tsne_embeddings.pdf}
+    \caption{t-SNE visualization of \texttt{[CLS]} token embeddings from the final hidden layer, colored by font family. Points belonging to the same family cluster tightly together, indicating that the model learns a representation space that groups typographically related variants. Distinct font categories (serif, sans-serif, monospace) occupy well-separated regions.}
+    \label{fig:tsne_embeddings}
+\end{figure}
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=0.85\textwidth]{figures/per_family_accuracy.pdf}
+    \caption{Classification accuracy broken down by font family, sorted from lowest to highest. Most families achieve near-perfect accuracy; lower-performing families tend to have many visually similar weight variants.}
+    \label{fig:per_family_accuracy}
+\end{figure}
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=0.75\textwidth]{figures/accuracy_vs_variants.pdf}
+    \caption{Per-family accuracy plotted against the number of weight variants in each family. Families with more variants (and thus more visually similar classes to distinguish) tend to have lower accuracy, consistent with the hypothesis that intra-family weight confusion drives most classification errors.}
+    \label{fig:accuracy_vs_variants}
+\end{figure}
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=0.85\textwidth]{figures/font_dendrogram.pdf}
+    \caption{Hierarchical clustering (UPGMA) of 31 font families by cosine distance
+    between mean \texttt{[CLS]} embeddings. The model's learned representations recover
+    typographic structure: serif, sans-serif, monospace, and display families
+    occupy distinct branches.}
+    \label{fig:dendrogram}
+\end{figure}
+
+\paragraph{Severity-weighted error analysis.}
+Top-1 accuracy treats all misclassifications equally, but confusing two adjacent weights of the same family (e.g., Roboto-400 vs.\ Roboto-500) is far less severe than confusing a serif with a sans-serif. We define a severity-weighted error metric using the model's own learned representations: for each prediction, the severity is the normalized cosine distance between the \texttt{[CLS]} embedding centroids of the true and predicted classes (0 for correct predictions, higher for more dissimilar confusions). Figure~\ref{fig:dendrogram} shows the resulting font family hierarchy recovered by UPGMA clustering on these distances. The severity-weighted error rate is substantially lower than the rate expected under uniform random predictions, confirming that the model's errors are concentrated among visually similar classes.
 
 \subsection{Comparison to Baseline}
 
