@@ -282,7 +282,7 @@ For each prediction, the severity is $s(y, \hat{y}) = 0$ if correct and $d(y, \h
 \begin{equation}
     \text{SWER} = \frac{1}{N} \sum_{n=1}^{N} s(y_n, \hat{y}_n)
 \end{equation}
-The absolute value of SWER depends on an arbitrary choice of distance normalization and is therefore not directly interpretable. However, the \emph{relative severity}---the ratio of the model's SWER to the expected SWER under uniform random predictions---is a dimensionless quantity that cancels the normalization constant, analogous to forming a dimensionless group in the Buckingham Pi theorem:
+The absolute value of SWER depends on an arbitrary choice of distance normalization and is therefore not directly interpretable. However, the \emph{relative severity}---the ratio of the model's SWER to the expected SWER under uniform random predictions---is a dimensionless, scale-invariant quantity that cancels the normalization constant:
 \begin{equation}
     \Pi = \frac{\text{SWER}}{\text{SWER}_{\text{random}}}, \qquad
     \text{SWER}_{\text{random}} = \frac{1}{K^2} \sum_{i,j} d(i,j)
