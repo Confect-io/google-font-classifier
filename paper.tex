@@ -311,26 +311,6 @@ SWER (random baseline) & \swerRandom{} \\
 
 Figure~\ref{fig:dendrogram} visualizes the font family similarity hierarchy recovered by UPGMA clustering on the centroid distances. Serif, sans-serif, monospace, and display families occupy distinct branches, confirming that the embedding space captures typographic structure.
 
-\subsection{Comparison to Baseline}
-
-We compare our LoRA-based approach against a fully fine-tuned DINOv2 baseline. Full fine-tuning trains all 87.2M parameters, while our method trains approximately 150K parameters (0.17\% of total). Despite the dramatic reduction in trainable parameters, the LoRA model achieves comparable accuracy, consistent with findings in the broader parameter-efficient fine-tuning literature.
-
-\begin{table}[h]
-\centering
-\caption{Comparison of fine-tuning strategies.}
-\label{tab:comparison}
-\begin{tabular}{lccc}
-\toprule
-\textbf{Method} & \textbf{Trainable Params} & \textbf{\% of Total} & \textbf{Top-1 Acc.} \\
-\midrule
-Full fine-tuning & 87.2M & 100\% & $\sim$87\% \\
-LoRA ($r=8$) & $\sim$150K & 0.17\% & $\sim$86\% \\
-Linear probe & $\sim$300K & 0.34\% & $\sim$72\% \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-The linear probe baseline, which freezes the entire backbone and only trains the classification head, achieves 72\% accuracy. This confirms that while DINOv2 features are highly informative, task-specific adaptation via LoRA provides a meaningful accuracy gain.
 
 % ---- 7. Deployment ----
 \section{Deployment}
