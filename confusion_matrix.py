@@ -628,9 +628,9 @@ def main():
         f.write(f"\\newcommand{{\\swerValue}}{{{severity['severity_weighted_error']:.4f}}}\n")
         f.write(f"\\newcommand{{\\swerRandom}}{{{severity['random_baseline_severity']:.4f}}}\n")
         f.write(f"\\newcommand{{\\swerRelative}}{{{relative:.4f}}}\n")
-        f.write(f"\\newcommand{{\\rawAccuracy}}{{{raw_acc:.1%}}}\n")
-        f.write(f"\\newcommand{{\\familyAccuracy}}{{{severity['family_accuracy']:.1%}}}\n")
-        f.write(f"\\newcommand{{\\severityWeightedAccuracy}}{{{swa:.1%}}}\n")
+        f.write(f"\\newcommand{{\\rawAccuracy}}{{{raw_acc:.1%}}}".replace("%", "\\%") + "\n")
+        f.write(f"\\newcommand{{\\familyAccuracy}}{{{severity['family_accuracy']:.1%}}}".replace("%", "\\%") + "\n")
+        f.write(f"\\newcommand{{\\severityWeightedAccuracy}}{{{swa:.1%}}}".replace("%", "\\%") + "\n")
     print(f"  Saved {metrics_path}")
 
 
