@@ -37,3 +37,9 @@ echo "==> pdflatex pass 2"
 $PDFLATEX -interaction=nonstopmode paper.tex
 
 echo "==> Done. Output: paper.pdf"
+
+# Bundle source for arXiv submission
+ARXIV_FIGURES=$(grep -o 'figures/[^}]*' paper.tex | sort -u)
+echo "==> Packaging arXiv submission"
+tar czf arxiv_submission.tar.gz paper.tex figures/metrics.tex $ARXIV_FIGURES
+echo "==> Done. Output: arxiv_submission.tar.gz"
