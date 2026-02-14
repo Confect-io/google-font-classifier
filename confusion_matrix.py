@@ -358,6 +358,8 @@ def plot_per_family_accuracy(y_true, y_pred, output_path):
 
 
 def plot_accuracy_vs_variants(y_true, y_pred, sorted_labels, output_path):
+    from adjustText import adjust_text
+
     # Count variants per family
     family_variants = defaultdict(int)
     for label in sorted_labels:
@@ -379,8 +381,11 @@ def plot_accuracy_vs_variants(y_true, y_pred, sorted_labels, output_path):
     fig, ax = plt.subplots(figsize=(8, 6))
     ax.scatter(n_variants, accuracies, s=50, color="#4C72B0", edgecolors="black", linewidths=0.5)
 
+    texts = []
     for fam, nv, acc in zip(families, n_variants, accuracies):
-        ax.annotate(fam, (nv, acc), fontsize=6, textcoords="offset points", xytext=(5, 3))
+        texts.append(ax.text(nv, acc, fam, fontsize=6))
+
+    adjust_text(texts, ax=ax, arrowprops=dict(arrowstyle="-", color="gray", lw=0.5))
 
     ax.set_xlabel("Number of Variants")
     ax.set_ylabel("Accuracy")
