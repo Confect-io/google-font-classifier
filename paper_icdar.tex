@@ -156,7 +156,7 @@ A critical design decision is ensuring identical preprocessing at training and i
     \item Convert to tensor and normalize using ImageNet statistics (mean $= [0.485, 0.456, 0.406]$, std $= [0.229, 0.224, 0.225]$).
 \end{enumerate}
 
-To eliminate preprocessing discrepancies, we implement a custom \texttt{FontClassifierWithPreprocessing} class that overrides the model's \texttt{forward} method to apply preprocessing within the model itself. This ensures that any deployment path---inference endpoint, pipeline, or direct model call---applies identical transformations.
+To eliminate preprocessing discrepancies, we implement a custom wrapper class that overrides the model's \texttt{forward} method to apply preprocessing within the model itself. This ensures that any deployment path---inference endpoint, pipeline, or direct model call---applies identical transformations.
 
 % ---- 5. Training ----
 \section{Experimental Setup}
