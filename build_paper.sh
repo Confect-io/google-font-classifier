@@ -4,12 +4,21 @@ set -e
 PDFLATEX=/Library/TeX/texbin/pdflatex
 VENV_DIR=.venv
 SKIP_MATRIX=false
+FORMAT=both
 EXTRA_ARGS=()
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --skip-matrix)
             SKIP_MATRIX=true
+            shift
+            ;;
+        --arxiv)
+            FORMAT=arxiv
+            shift
+            ;;
+        --icdar)
+            FORMAT=icdar
             shift
             ;;
         *)
@@ -30,16 +39,32 @@ if [ "$SKIP_MATRIX" = false ]; then
     "$VENV_DIR/bin/python" confusion_matrix.py "${EXTRA_ARGS[@]}"
 fi
 
-echo "==> pdflatex pass 1"
-$PDFLATEX -interaction=nonstopmode paper.tex
+build_tex() {
+    local texfile=$1
+    local basename="${texfile%.tex}"
+    echo "==> pdflatex pass 1: $texfile"
+    $PDFLATEX -interaction=nonstopmode "$texfile"
+    echo "==> pdflatex pass 2: $texfile"
+    $PDFLATEX -interaction=nonstopmode "$texfile"
+    echo "==> Done. Output: ${basename}.pdf"
+}
 
-echo "==> pdflatex pass 2"
-$PDFLATEX -interaction=nonstopmode paper.tex
+if [ "$FORMAT" = arxiv ] || [ "$FORMAT" = both ]; then
+    build_tex paper_arxiv.tex
 
-echo "==> Done. Output: paper.pdf"
+    # Bundle source for arXiv submission
+    ARXIV_FIGURES=$(grep -o 'figures/[^}]*' paper_arxiv.tex | sort -u)
+    echo "==> Packaging arXiv submission"
+    COPYFILE_DISABLE=1 tar czf arxiv_submission.tar.gz paper_arxiv.tex figures/metrics.tex $ARXIV_FIGURES
+    echo "==> Done. Output: arxiv_submission.tar.gz"
+fi
 
-# Bundle source for arXiv submission
-ARXIV_FIGURES=$(grep -o 'figures/[^}]*' paper.tex | sort -u)
-echo "==> Packaging arXiv submission"
-COPYFILE_DISABLE=1 tar czf arxiv_submission.tar.gz paper.tex figures/metrics.tex $ARXIV_FIGURES
-echo "==> Done. Output: arxiv_submission.tar.gz"
+if [ "$FORMAT" = icdar ] || [ "$FORMAT" = both ]; then
+    build_tex paper_icdar.tex
+
+    # Bundle source for ICDAR/LNCS submission
+    ICDAR_FIGURES=$(grep -o 'figures/[^}]*' paper_icdar.tex | sort -u)
+    echo "==> Packaging ICDAR submission"
+    COPYFILE_DISABLE=1 tar czf icdar_submission.tar.gz paper_icdar.tex llncs.cls splncs04.bst figures/metrics.tex $ICDAR_FIGURES
+    echo "==> Done. Output: icdar_submission.tar.gz"
+fi

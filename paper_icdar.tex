@@ -1,0 +1,390 @@
+\documentclass[runningheads]{llncs}
+
+% ---- Packages ----
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+
+% ---- Auto-generated metrics from confusion_matrix.py ----
+\InputIfFileExists{figures/metrics.tex}{}{%
+  \newcommand{\swerValue}{--}
+  \newcommand{\swerRandom}{--}
+  \newcommand{\swerRelative}{--}
+  \newcommand{\rawAccuracy}{--}
+  \newcommand{\familyAccuracy}{--}
+}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=blue,
+    urlcolor=blue
+}
+
+% ---- Title ----
+\title{Parameter-Efficient Fine-Tuning of DINOv2 for\\Large-Scale Font Classification}
+\titlerunning{Parameter-Efficient Fine-Tuning of DINOv2 for Font Classification}
+
+\author{Anonymous Author(s)}
+\authorrunning{Anonymous}
+\institute{Anonymous Institution}
+
+\begin{document}
+\maketitle
+
+% ---- Abstract ----
+\begin{abstract}
+We present a font classification system capable of identifying 394 font families from rendered text images. Our approach fine-tunes a DINOv2 Vision Transformer using Low-Rank Adaptation (LoRA), achieving approximately 86\% top-1 accuracy while training fewer than 1\% of the model's 87.2M parameters. We introduce a synthetic dataset generation pipeline that renders Google Fonts at scale with diverse augmentations including randomized colors, alignment, line wrapping, and Gaussian noise, producing training images that generalize to real-world typographic samples. The model incorporates built-in preprocessing to ensure consistency between training and inference, and is deployed as a publicly available inference endpoint. We release the model, dataset, and full training pipeline as open-source resources.
+\keywords{Font classification \and Vision Transformer \and LoRA \and DINOv2 \and Parameter-efficient fine-tuning}
+\end{abstract}
+
+% ---- 1. Introduction ----
+\section{Introduction}
+
+Font identification is a practical problem encountered across graphic design, document analysis, brand compliance, and web development. Given an image of rendered text, the task is to classify the typeface used. While humans with typographic expertise can distinguish common font families, the proliferation of fonts---Google Fonts alone hosts over 1,700 families with numerous stylistic variants---makes manual identification increasingly impractical.
+
+Prior approaches to font recognition have relied on hand-crafted features such as stroke width, serif detection, and character-level shape descriptors~\cite{zramdini1998optical}. More recent methods leverage convolutional neural networks trained on synthetic font images~\cite{wang2015deepfont}. However, these systems often struggle with large label spaces, subtle inter-class differences (e.g., weight variants of the same family), and the domain gap between synthetic training data and real-world images.
+
+In this work, we take advantage of recent advances in self-supervised visual representation learning to address these challenges. Specifically, we fine-tune DINOv2~\cite{oquab2024dinov2}, a Vision Transformer pre-trained with self-distillation on a large curated image dataset, using Low-Rank Adaptation (LoRA)~\cite{hu2022lora}. This parameter-efficient strategy allows us to adapt a powerful general-purpose vision backbone to the font classification domain while training only a small fraction of the total parameters.
+
+Our contributions are as follows:
+\begin{enumerate}
+    \item A parameter-efficient fine-tuning approach for font classification that adapts DINOv2 with LoRA, achieving 86\% top-1 accuracy across 394 font classes.
+    \item A scalable synthetic dataset generation pipeline that renders Google Fonts with diverse augmentations to produce training data robust to visual variation.
+    \item An end-to-end system with built-in preprocessing that ensures consistency between training and deployment, released as an open-source model and dataset.
+\end{enumerate}
+
+% ---- 2. Related Work ----
+\section{Related Work}
+
+\subsection{Font Recognition}
+
+Early font recognition systems operated on scanned documents and relied on global texture features, typographic measurements, and template matching~\cite{zramdini1998optical}. Wang et al.~\cite{wang2015deepfont} introduced DeepFont, a CNN-based system trained on synthetic font images with domain adaptation to handle real-world photographs. Subsequent work explored multi-task learning for joint font attribute prediction~\cite{chen2014large} and attention mechanisms for discriminating fine-grained typographic features.
+
+\subsection{Self-Supervised Vision Transformers}
+
+Vision Transformers (ViTs)~\cite{dosovitskiy2021image} have become a dominant architecture in computer vision. Self-supervised pre-training methods---including DINO~\cite{caron2021emerging} and its successor DINOv2~\cite{oquab2024dinov2}---learn powerful visual representations through self-distillation without labeled data. DINOv2 features emerge that capture semantic structure, texture, and fine-grained visual distinctions, making it well-suited as a backbone for downstream classification tasks.
+
+\subsection{Parameter-Efficient Fine-Tuning}
+
+Full fine-tuning of large pre-trained models is computationally expensive and risks catastrophic forgetting. Parameter-efficient methods such as adapter layers~\cite{houlsby2019parameter}, prompt tuning~\cite{jia2022visual}, and Low-Rank Adaptation (LoRA)~\cite{hu2022lora} inject a small number of trainable parameters while keeping the backbone frozen. LoRA decomposes weight updates into low-rank matrices, enabling efficient adaptation with minimal overhead. It has been widely adopted for language models and has shown strong results on vision tasks as well.
+
+% ---- 3. Dataset ----
+\section{Dataset}
+\label{sec:dataset}
+
+\subsection{Font Selection}
+
+We source fonts from the Google Fonts open-source repository.\footnote{\url{https://github.com/google/fonts}} From the full catalog, we select a curated set of 31 base font families spanning diverse typographic categories: sans-serif (e.g., Inter, Roboto, Poppins, DM Sans), serif (e.g., Crimson Pro, Playfair Display, Merriweather), monospace (JetBrains Mono), and display faces (e.g., Ultra, Big Shoulders Text). Selection was guided by three criteria: (1)~\emph{prevalence in modern design tooling}---we prioritized fonts frequently used in design platforms for website and mobile design; (2)~\emph{visual distinctiveness}---we excluded near-duplicate families that differ only in minor metrics to keep classes well-separated; and (3)~\emph{representativeness of high-quality digital design}---the set reflects the typographic choices typical of professional web and mobile interfaces. Many of these families include variable font axes (primarily weight), and we enumerate each axis variation as a separate class. This produces a total of 394 distinct font variants for classification.
+
+\subsubsection{Iterative Font Curation.}
+
+The final font set is the result of four iterations of the model and dataset, each informed by the failures of the previous version:
+
+\begin{itemize}
+    \item \textbf{v1} (10 families, 102 variants, 91.6\% accuracy). A small proof-of-concept trained on a handful of families (Inter, Roboto, Poppins, and several others). High accuracy, but the narrow label space did not cover enough fonts to be useful in practice.
+
+    \item \textbf{v2} (many dozens of families, 700 variants). A broad expansion that included a large portion of the Google Fonts catalog. The much larger label space introduced many visually near-identical font pairs (e.g., families that differ only in minor spacing or hinting), causing widespread confusion between classes and degrading accuracy.
+
+    \item \textbf{v3} (20 families, 300 variants, 59\% accuracy). Scaled back from v2 by removing duplicate-like families, but the training dataset was too small (approximately 9,400 images) relative to the label count, and several included families still overlapped visually. Accuracy dropped significantly.
+
+    \item \textbf{v4} (31 families, 394 variants, 86\% accuracy). The current version. The font set was rebuilt from scratch using the three selection criteria described above. The training dataset was scaled up substantially (approximately 575 images per variant). A critical engineering fix---embedding preprocessing into the model's \texttt{forward} method---eliminated train-serve skew that had silently hurt earlier versions.
+\end{itemize}
+
+All four dataset versions are publicly available.\footnote{Dataset URLs anonymized for review.}
+
+\subsection{Synthetic Image Generation}
+
+We generate training images by rendering text strings in each font variant onto images. The generation pipeline proceeds as follows:
+
+\begin{enumerate}
+    \item \textbf{Text selection.} For each font variant, we render 500 random sentences drawn from literary source texts, plus 25 random numbers, 25 dollar amounts, and 25 percentage values. Test images use 25 sentences, 5 numbers, 5 dollar amounts, and 5 percentage values per class.
+
+    \item \textbf{Rendering.} Text is rendered at 1024px font size onto a canvas with padding on all sides (default 50px) using the Pillow library. The canvas is then cropped to the tight bounding box of the rendered glyphs (i.e., all empty space beyond the ink is removed). The cropped glyph image is resized so that its height equals 224 pixels, with the width scaled proportionally to preserve the aspect ratio, using Lanczos resampling.
+
+    \item \textbf{Color augmentation.} Background and text colors are randomly sampled as RGB tuples. To ensure legibility, we require that their perceived luminance values differ by at least 80 on a 0--255 scale, where luminance is computed as $L = 0.299R + 0.587G + 0.114B$ (the ITU-R BT.601 formula). If the randomly drawn pair fails this contrast check, a new pair is sampled until the constraint is satisfied.
+
+    \item \textbf{Layout augmentation.} Text alignment is randomly chosen from left, center, or right. With 20\% probability, spaces are replaced by newlines to create multi-line renderings.
+
+    \item \textbf{Noise augmentation.} Per-pixel Gaussian noise is added to improve robustness to compression artifacts and sensor noise. Each pixel channel value $p \in [0, 255]$ is replaced by $\mathrm{clamp}(p + \mathcal{N}(0,\, \sigma^2),\; 0,\; 255)$ where $\sigma = 0.10 \times 255 = 25.5$. In practice this means most pixel values are perturbed by roughly $\pm$25 intensity levels.
+\end{enumerate}
+
+The resulting dataset contains approximately 575 training images per font variant, with a held-out test set of 40 images per variant.
+
+\subsection{Data Validation}
+
+All generated images are verified programmatically using PIL's image verification to detect and remove corrupted files. Filenames are sanitized to handle special characters that may cause filesystem issues across platforms.
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\textwidth]{figures/sample_images.pdf}
+    \caption{Sample test images from four font families spanning different typographic categories: serif (Crimson Pro), sans-serif (Inter), monospace (JetBrains Mono), and display (Big Shoulders Text). Each column shows a different weight variant. These are the actual rendered images seen by the model at inference time, including color augmentation and noise.}
+    \label{fig:sample_images}
+\end{figure}
+
+% ---- 4. Method ----
+\section{Method}
+
+\subsection{Model Architecture}
+
+Our model builds on the DINOv2-Base architecture~\cite{oquab2024dinov2}, specifically the \texttt{dinov2-base-imagenet1k-1-layer} variant pre-trained on ImageNet-1K. This model uses the standard ViT-B/14 architecture with patch size 14, embedding dimension 768, 12 attention heads, and 12 transformer blocks.
+
+We add a linear classification head mapping the \texttt{[CLS]} token representation to the 394 output classes. The classification head is randomly initialized and fully trainable.
+
+\subsection{LoRA Configuration}
+
+We apply LoRA to the query ($W_Q$) and value ($W_V$) projection matrices in each transformer block's multi-head self-attention layer. The LoRA decomposition replaces a weight update $\Delta W \in \mathbb{R}^{d \times d}$ with the product of two low-rank matrices:
+\begin{equation}
+    \Delta W = BA, \quad B \in \mathbb{R}^{d \times r}, \quad A \in \mathbb{R}^{r \times d}
+\end{equation}
+where $r \ll d$ is the rank. We use $r = 8$ and scaling factor $\alpha = 16$. The scaling factor controls the magnitude of the low-rank update: the actual weight modification applied is $\frac{\alpha}{r} \Delta W$, so with $\alpha = 16$ and $r = 8$ the update is scaled by a factor of 2. Dropout with probability 0.1 is applied to the low-rank matrices $A$ and $B$ during training as regularization. The base model weights remain frozen; only the LoRA parameters and the randomly initialized classification head are updated.
+
+This configuration adds approximately 150K trainable parameters on top of the 87M frozen backbone parameters, representing less than 0.2\% of the total model size.
+
+\subsection{Preprocessing}
+
+A critical design decision is ensuring identical preprocessing at training and inference time. Our preprocessing pipeline:
+\begin{enumerate}
+    \item Convert to RGB.
+    \item Pad to a square canvas: since the rendered glyph images are typically wider than they are tall, black pixels (\texttt{fill=0}) are added equally to the top and bottom (or left and right) so that the shorter dimension matches the longer one. The image is centered within the padded square.
+    \item Resize the square image to $224 \times 224$ pixels.
+    \item Convert to tensor and normalize using ImageNet statistics (mean $= [0.485, 0.456, 0.406]$, std $= [0.229, 0.224, 0.225]$).
+\end{enumerate}
+
+To eliminate preprocessing discrepancies, we implement a custom \texttt{FontClassifierWithPreprocessing} class that overrides the model's \texttt{forward} method to apply preprocessing within the model itself. This ensures that any deployment path---inference endpoint, pipeline, or direct model call---applies identical transformations.
+
+% ---- 5. Training ----
+\section{Experimental Setup}
+
+\subsection{Training Details}
+
+We train using the HuggingFace \texttt{Trainer} with the following hyperparameters:
+
+\begin{table}[h]
+\centering
+\caption{Training hyperparameters.}
+\label{tab:hyperparams}
+\begin{tabular}{ll}
+\toprule
+\textbf{Hyperparameter} & \textbf{Value} \\
+\midrule
+Optimizer & AdamW \\
+Learning rate & $1 \times 10^{-4}$ \\
+Weight decay & 0.05 \\
+Batch size & 32 \\
+Epochs & 100 \\
+LR scheduler & Linear decay (Trainer default) \\
+Evaluation frequency & Every 500 steps \\
+Precision & FP16 (CUDA) / FP32 (MPS) \\
+Checkpoint selection & Best by validation accuracy \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+A checkpoint (a full snapshot of the model weights, optimizer state, and training progress) is saved every 500 training steps, and the model is also evaluated on the held-out test set at each of these intervals. To limit disk usage, only the 3 most recent checkpoints are kept on disk at any time; when a fourth checkpoint is written the oldest is deleted. For example, after step 2000 the checkpoints for steps 1000, 1500, and 2000 would be on disk, while the checkpoint for step 500 would have been removed. At the end of training, the HuggingFace Trainer automatically loads the checkpoint with the highest top-1 validation accuracy (tracked via \texttt{eval\_accuracy} at each 500-step evaluation) and uses it as the final model for evaluation and release.
+
+\subsection{Infrastructure}
+
+Training is conducted using PyTorch with HuggingFace Transformers and the PEFT library for LoRA integration. The training script automatically selects the best available hardware accelerator: Apple MPS (Metal Performance Shaders, for Apple Silicon GPUs) is preferred if available, followed by CUDA (for NVIDIA GPUs), with CPU as a fallback. Mixed-precision training (FP16) is enabled on CUDA to reduce memory usage and training time; MPS and CPU use full FP32 precision. TensorBoard is used for monitoring training and validation metrics in real time.
+
+% ---- 6. Results ----
+\section{Results}
+
+\subsection{Classification Accuracy}
+
+The fine-tuned model achieves approximately \textbf{86\% top-1 accuracy} on the held-out test set across 394 font classes. Given the fine-grained nature of the task---many classes differ only in weight (e.g., Roboto-300 vs.\ Roboto-400) or subtle stylistic features---this represents strong performance.
+
+\subsection{Analysis}
+
+We compute a full confusion matrix across all classes to analyze per-class performance and systematic misclassification patterns. Figure~\ref{fig:confusion_matrix} shows the row-normalized confusion matrix with font families grouped together. Key observations include:
+
+\begin{itemize}
+    \item \textbf{Weight variant confusion.} The most common errors occur between adjacent weight variants of the same font family (e.g., weight 400 vs.\ 500). This is expected, as the visual difference between adjacent weights can be as small as a few pixels of stroke width at the $224 \times 224$ resolution.
+
+    \item \textbf{Cross-family accuracy.} Classification between distinct font families (e.g., a serif vs.\ sans-serif) is near-perfect, indicating the model captures high-level typographic structure effectively.
+
+    \item \textbf{Robustness to content.} Performance is consistent across sentence, number, currency, and percentage test images, suggesting the model learns font-intrinsic features rather than content-specific patterns.
+\end{itemize}
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\textwidth]{figures/confusion_matrix.pdf}
+    \caption{Row-normalized confusion matrix across all font classes, grouped by font family. The strong diagonal indicates high per-class accuracy, with most off-diagonal mass concentrated within family blocks (weight variant confusion).}
+    \label{fig:confusion_matrix}
+\end{figure}
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=0.85\textwidth]{figures/top_confused_pairs.pdf}
+    \caption{Top-20 most frequent misclassification pairs. The majority involve adjacent weight variants within the same font family, confirming that inter-family classification is near-perfect.}
+    \label{fig:top_confused_pairs}
+\end{figure}
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\textwidth]{figures/tsne_embeddings.pdf}
+    \caption{t-SNE visualization of \texttt{[CLS]} token embeddings from the final hidden layer, colored by font family. Points belonging to the same family cluster tightly together, indicating that the model learns a representation space that groups typographically related variants. Distinct font categories (serif, sans-serif, monospace) occupy well-separated regions.}
+    \label{fig:tsne_embeddings}
+\end{figure}
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=0.85\textwidth]{figures/per_family_accuracy.pdf}
+    \caption{Classification accuracy broken down by font family, sorted from lowest to highest. Most families achieve near-perfect accuracy; lower-performing families tend to have many visually similar weight variants.}
+    \label{fig:per_family_accuracy}
+\end{figure}
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=0.75\textwidth]{figures/accuracy_vs_variants.pdf}
+    \caption{Per-family accuracy plotted against the number of weight variants in each family. Families with more variants (and thus more visually similar classes to distinguish) tend to have lower accuracy, consistent with the hypothesis that intra-family weight confusion drives most classification errors.}
+    \label{fig:accuracy_vs_variants}
+\end{figure}
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=0.85\textwidth]{figures/font_dendrogram.pdf}
+    \caption{Hierarchical clustering (UPGMA) of 31 font families by cosine distance
+    between mean \texttt{[CLS]} embeddings. The model's learned representations recover
+    typographic structure: serif, sans-serif, monospace, and display families
+    occupy distinct branches.}
+    \label{fig:dendrogram}
+\end{figure}
+
+\subsubsection{Severity-Weighted Error Analysis.}
+Top-1 accuracy treats all misclassifications equally, but confusing two adjacent weights of the same family (e.g., Roboto-400 vs.\ Roboto-500) is far less severe than confusing a serif with a sans-serif. We introduce two complementary metrics that capture this distinction.
+
+\paragraph{Family-Level Accuracy.}
+The simplest correction: collapse all weight variants into their parent family and score a prediction as correct if the predicted and true labels share the same family, regardless of weight. The gap between variant-level and family-level accuracy directly quantifies how much of the raw error rate is due to within-family weight confusion versus genuine cross-family misidentification.
+
+\paragraph{Relative Severity.}
+For a continuous measure, we define a \emph{severity-weighted error rate} (SWER) using the model's own learned representations. For each of the $K = 394$ classes, we compute a centroid $\mathbf{c}_k$ by averaging the \texttt{[CLS]} token embeddings (from the final hidden layer) of all test samples belonging to class~$k$. The pairwise cosine distance between centroids is:
+\begin{equation}
+    d(i, j) = 1 - \frac{\mathbf{c}_i \cdot \mathbf{c}_j}{\|\mathbf{c}_i\| \, \|\mathbf{c}_j\|}
+\end{equation}
+For each prediction, the severity is $s(y, \hat{y}) = 0$ if correct and $d(y, \hat{y})$ otherwise. The SWER is the mean severity across all $N$ test predictions:
+\begin{equation}
+    \text{SWER} = \frac{1}{N} \sum_{n=1}^{N} s(y_n, \hat{y}_n)
+\end{equation}
+The absolute value of SWER depends on an arbitrary choice of distance normalization and is therefore not directly interpretable. However, the \emph{relative severity}---the ratio of the model's SWER to the expected SWER under uniform random predictions---is a dimensionless, scale-invariant quantity that cancels the normalization constant:
+\begin{equation}
+    \Pi = \frac{\text{SWER}}{\text{SWER}_{\text{random}}}, \qquad
+    \text{SWER}_{\text{random}} = \frac{1}{K^2} \sum_{i,j} d(i,j)
+\end{equation}
+This ratio is invariant to any linear rescaling of the distance matrix: if all distances are multiplied by a constant $\alpha$, both numerator and denominator scale by $\alpha$ and the ratio is unchanged. A value of $\Pi = 0$ indicates a perfect classifier; $\Pi = 1$ indicates errors as severe as random guessing.
+
+Table~\ref{tab:severity} reports both metrics. Family-level accuracy confirms that most errors are within-family weight confusions. The relative severity $\Pi$ provides a continuous, scale-invariant confirmation: the model's errors carry only a fraction of the cost expected from random predictions.
+
+\begin{table}[h]
+\centering
+\caption{Error severity analysis. Family-level accuracy collapses weight variants; relative severity $\Pi$ is a scale-invariant ratio of the model's embedding-distance-weighted error to the random baseline.}
+\label{tab:severity}
+\begin{tabular}{lr}
+\toprule
+\textbf{Metric} & \textbf{Value} \\
+\midrule
+Top-1 accuracy (variant-level) & \rawAccuracy{} \\
+\textbf{Family-level accuracy} & \textbf{\familyAccuracy{}} \\
+\midrule
+SWER (model) & \swerValue{} \\
+SWER (random baseline) & \swerRandom{} \\
+\textbf{Relative severity} $\Pi$ & \textbf{\swerRelative{}} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Figure~\ref{fig:dendrogram} visualizes the font family similarity hierarchy recovered by UPGMA clustering on the centroid distances. Serif, sans-serif, monospace, and display families occupy distinct branches, confirming that the embedding space captures typographic structure.
+
+
+% ---- 7. Deployment ----
+\section{Deployment}
+
+The trained model is publicly released.\footnote{Model and dataset URLs anonymized for review.} Before upload, the LoRA adapter weights are merged into the base model using PEFT's \texttt{merge\_and\_unload()} method. Concretely, each low-rank update $\frac{\alpha}{r}BA$ is added directly to the corresponding frozen weight matrix $W$, producing a single set of full-rank weights that behave identically to the adapted model but no longer require the PEFT library at inference time.
+
+The model supports three deployment modes:
+\begin{enumerate}
+    \item \textbf{Inference Endpoints.} A custom \texttt{handler.py} accepts raw bytes, base64-encoded strings, or PIL images, applies standardized preprocessing, and returns top-5 predictions with softmax confidence scores.
+    \item \textbf{Pipeline.} Standard \texttt{pipeline("image-classification")} usage with automatic model and processor loading.
+    \item \textbf{Local inference.} A command-line tool (\texttt{serve\_model.py}) for single-image prediction with top-5 output.
+\end{enumerate}
+
+% ---- 8. Discussion ----
+\section{Discussion}
+
+\subsubsection{Strengths.} The combination of DINOv2's pre-trained representations and LoRA's parameter efficiency makes this approach practical for deployment. The synthetic data pipeline is fully reproducible and can be extended to new fonts without manual labeling. Built-in preprocessing eliminates a common source of train--serve skew.
+
+\subsubsection{Limitations.} The model is trained exclusively on synthetically rendered text and may not generalize perfectly to photographs of printed text, handwritten annotations overlaid on typed text, or heavily stylized graphics. The current system classifies images at the font level but does not localize text regions---it assumes the input is a cropped text region. Performance degrades on font weight variants that are visually near-identical at low resolution.
+
+\subsubsection{Future Work.} Natural extensions include: (1) training on a broader set of fonts beyond the current 31 families, (2) incorporating real-world training images via domain adaptation, (3) jointly predicting font family and attributes (weight, width, style) in a multi-task framework, and (4) integrating text detection to enable end-to-end font recognition from uncropped images.
+
+% ---- 9. Conclusion ----
+\section{Conclusion}
+
+We have presented a font classification system that identifies 394 font variants with 86\% accuracy by fine-tuning a DINOv2 Vision Transformer with LoRA. The approach is parameter-efficient, training fewer than 0.2\% of model parameters, and is supported by a reproducible synthetic data generation pipeline. The model, dataset, and code are publicly available to support further research in document analysis and typographic recognition.\footnote{Source code URL anonymized for review.}
+
+% ---- Acknowledgments (commented out for double-blind review) ----
+%\begin{credits}
+%\subsubsection{\ackname}
+%We thank the Google Fonts team for maintaining the open-source font repository used to generate our training data.
+%
+%\subsubsection{\discintname}
+%The authors have no competing interests to declare that are relevant to the content of this article.
+%\end{credits}
+
+% ---- References ----
+\bibliographystyle{splncs04}
+\begin{thebibliography}{10}
+
+\bibitem{caron2021emerging}
+Caron, M., Touvron, H., Misra, I., J\'{e}gou, H., Mairal, J., Bojanowski, P., Joulin, A.:
+Emerging properties in self-supervised vision transformers.
+In: Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV), pp.~9650--9660 (2021)
+
+\bibitem{chen2014large}
+Chen, G., Yang, J., Jin, H., Brandt, J., Shechtman, E., Agarwala, A., Han, T.X.:
+Large-scale visual font recognition.
+In: Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR), pp.~3598--3605 (2014)
+
+\bibitem{dosovitskiy2021image}
+Dosovitskiy, A., Beyer, L., Kolesnikov, A., Weissenborn, D., Zhai, X., Unterthiner, T., Dehghani, M., Minderer, M., Heigold, G., Gelly, S., Uszkoreit, J., Houlsby, N.:
+An image is worth 16x16 words: Transformers for image recognition at scale.
+In: International Conference on Learning Representations (ICLR) (2021)
+
+\bibitem{houlsby2019parameter}
+Houlsby, N., Giurgiu, A., Jastrzebski, S., Morrone, B., de~Laroussilhe, Q., Gesmundo, A., Attariyan, M., Gelly, S.:
+Parameter-efficient transfer learning for NLP.
+In: Proceedings of the 36th International Conference on Machine Learning (ICML), pp.~2790--2799 (2019)
+
+\bibitem{hu2022lora}
+Hu, E.J., Shen, Y., Wallis, P., Allen-Zhu, Z., Li, Y., Wang, S., Wang, L., Chen, W.:
+LoRA: Low-rank adaptation of large language models.
+In: International Conference on Learning Representations (ICLR) (2022)
+
+\bibitem{jia2022visual}
+Jia, M., Tang, L., Chen, B.-C., Cardie, C., Belongie, S., Hariharan, B., Lim, S.-N.:
+Visual prompt tuning.
+In: European Conference on Computer Vision (ECCV), pp.~709--727 (2022)
+
+\bibitem{oquab2024dinov2}
+Oquab, M., Darcet, T., Moutakanni, T., et al.:
+DINOv2: Learning robust visual features without supervision.
+Transactions on Machine Learning Research (TMLR) (2024)
+
+\bibitem{wang2015deepfont}
+Wang, Z., Yang, J., Jin, H., Shechtman, E., Agarwala, A., Brandt, J., Huang, T.S.:
+DeepFont: Identify your font from an image.
+In: Proceedings of the 23rd ACM International Conference on Multimedia, pp.~451--459 (2015)
+
+\bibitem{zramdini1998optical}
+Zramdini, A., Ingold, R.:
+Optical font recognition using typographical features.
+IEEE Transactions on Pattern Analysis and Machine Intelligence \textbf{20}(8), 877--882 (1998)
+
+\end{thebibliography}
+
+\end{document}
