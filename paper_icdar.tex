@@ -132,7 +132,7 @@ All generated images are verified programmatically using PIL's image verificatio
 
 \subsection{Model Architecture}
 
-Our model builds on the DINOv2-Base architecture~\cite{oquab2024dinov2}, specifically the \texttt{dinov2-base-imagenet1k-1-layer} variant pre-trained on ImageNet-1K. This model uses the standard ViT-B/14 architecture with patch size 14, embedding dimension 768, 12 attention heads, and 12 transformer blocks.
+Our model builds on the DINOv2-Base architecture~\cite{oquab2024dinov2}, specifically the variant pre-trained on ImageNet-1K.\footnote{Model ID: \texttt{dinov2-base-imagenet1k-1-layer}.} This model uses the standard ViT-B/14 architecture with patch size 14, embedding dimension 768, 12 attention heads, and 12 transformer blocks.
 
 We add a linear classification head mapping the \texttt{[CLS]} token representation to the 394 output classes. The classification head is randomly initialized and fully trainable.
 
