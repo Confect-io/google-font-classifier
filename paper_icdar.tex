@@ -137,6 +137,7 @@ Our model builds on the DINOv2-Base architecture~\cite{oquab2024dinov2}, specifi
 We add a linear classification head mapping the \texttt{[CLS]} token representation to the 394 output classes. The classification head is randomly initialized and fully trainable.
 
 \subsection{LoRA Configuration}
+\label{sec:lora}
 
 We apply LoRA to the query ($W_Q$) and value ($W_V$) projection matrices in each transformer block's multi-head self-attention layer. The LoRA decomposition replaces a weight update $\Delta W \in \mathbb{R}^{d \times d}$ with the product of two low-rank matrices:
 \begin{equation}
@@ -304,7 +305,7 @@ Figure~\ref{fig:dendrogram} visualizes the font family similarity hierarchy reco
 % ---- 7. Deployment ----
 \section{Deployment}
 
-The trained model is publicly released.\footnote{Model and dataset URLs anonymized for review.} Before upload, the LoRA adapter weights are merged into the base model using PEFT's \texttt{merge\_and\_unload()} method. Concretely, each low-rank update $\frac{\alpha}{r}BA$ is added directly to the corresponding frozen weight matrix $W$, producing a single set of full-rank weights that behave identically to the adapted model but no longer require the PEFT library at inference time.
+The trained model is publicly released.\footnote{Model and dataset URLs anonymized for review.} To simplify deployment, we merge the LoRA adapters into the base weights before upload, collapsing each low-rank update into its corresponding weight matrix (see Sect.~\ref{sec:lora}). The merged model produces identical outputs but no longer requires the PEFT library at inference time.
 
 The model supports three deployment modes:
 \begin{enumerate}
