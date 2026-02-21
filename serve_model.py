@@ -1,15 +1,10 @@
-import json
-import os
 import sys
 
 import torch
-import torchvision.transforms as T
-from peft import PeftModel
 from PIL import Image
 from transformers import AutoImageProcessor, Dinov2ForImageClassification
 
-# Import the inference transform function from train_model.py
-from train_model import get_inference_transform
+from handler import get_inference_transform
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:

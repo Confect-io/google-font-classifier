@@ -7,13 +7,12 @@ from fastapi.responses import JSONResponse
 from PIL import Image
 from transformers import AutoImageProcessor, Dinov2ForImageClassification
 
-# Import the inference transform function from train_model.py
-from train_model import get_inference_transform
+from handler import get_inference_transform
 
 # Initialize FastAPI app
 app = FastAPI(title="Font Classifier API", description="API for classifying font types from images")
 
-hf_model_name = "dchen0/font-classifier-v4"
+hf_model_name = "dchen0/font_classifier_v4"
 
 # Regular model loading from HuggingFace
 model = Dinov2ForImageClassification.from_pretrained(
