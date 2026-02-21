@@ -47,6 +47,8 @@ def parse_args():
                       help='LoRA alpha parameter')
     parser.add_argument('--lora_dropout', type=float, default=0.1,
                       help='LoRA dropout rate')
+    parser.add_argument('--full_finetune', action='store_true',
+                      help='Full fine-tuning baseline (no LoRA). Mutually exclusive with --checkpoint.')
     parser.add_argument('--test_size', type=float, default=0.1,
                       help='Proportion of data to use for validation')
     parser.add_argument('--seed', type=int, default=42,
@@ -135,7 +137,10 @@ def get_transform(processor: AutoImageProcessor, size: int):
 
 if __name__ == "__main__":
     args = parse_args()
-    
+
+    if args.full_finetune and args.checkpoint:
+        raise ValueError("--full_finetune and --checkpoint are mutually exclusive (checkpoints are PEFT checkpoints).")
+
     # Configure logging with timestamps
     logging.basicConfig(
         level=args.log_level,
@@ -206,22 +211,31 @@ if __name__ == "__main__":
             ignore_mismatched_sizes=True,
         )
 
-    logger.info("Configuring LoRA adapters")
-    peft_cfg = LoraConfig(
-        r             = args.lora_rank,
-        lora_alpha    = args.lora_alpha,
-        target_modules = ["query", "value"],  # Q & V proj in ViT blocks
-        lora_dropout  = args.lora_dropout,
-        bias          = "none",
-        modules_to_save = ["classifier"],  # IMPORTANT: Save classification head too!
-    )
-
-    if args.checkpoint:
-        model = load_checkpoint_with_size_mismatch_handling(base, args.checkpoint, peft_cfg)
+    if args.full_finetune:
+        logger.info("Full fine-tuning mode: unfreezing all parameters (no LoRA)")
+        for param in base.parameters():
+            param.requires_grad = True
+        model = base
+        trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        total = sum(p.numel() for p in model.parameters())
+        logger.info(f"trainable params: {trainable:,} || all params: {total:,} || trainable%: {100 * trainable / total:.4f}")
     else:
-        model  = get_peft_model(base, peft_cfg)        # fresh LoRA wrap
-    
-    model.print_trainable_parameters()
+        logger.info("Configuring LoRA adapters")
+        peft_cfg = LoraConfig(
+            r             = args.lora_rank,
+            lora_alpha    = args.lora_alpha,
+            target_modules = ["query", "value"],  # Q & V proj in ViT blocks
+            lora_dropout  = args.lora_dropout,
+            bias          = "none",
+            modules_to_save = ["classifier"],  # IMPORTANT: Save classification head too!
+        )
+
+        if args.checkpoint:
+            model = load_checkpoint_with_size_mismatch_handling(base, args.checkpoint, peft_cfg)
+        else:
+            model  = get_peft_model(base, peft_cfg)        # fresh LoRA wrap
+
+        model.print_trainable_parameters()
 
     def collate(batch):
         # The transform function has already converted images to tensors and stored them in pixel_values
@@ -301,7 +315,10 @@ if __name__ == "__main__":
 
         with tempfile.TemporaryDirectory() as tmp:
             # Merge the PEFT weights into the base model so that we upload an independent complete model.
-            merged = trainer.model.merge_and_unload()
+            if args.full_finetune:
+                merged = trainer.model
+            else:
+                merged = trainer.model.merge_and_unload()
             id2label = {i: name for i, name in enumerate(label_names)}
             label2id = {name: i for i, name in enumerate(label_names)}
 

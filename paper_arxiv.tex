@@ -95,19 +95,7 @@ We source fonts from the Google Fonts open-source repository.\footnote{\url{http
 
 \subsubsection{Iterative Font Curation}
 
-The final font set is the result of four iterations of the model and dataset, each informed by the failures of the previous version:
-
-\begin{itemize}[leftmargin=*]
-    \item \textbf{v1} (10 families, 102 variants, 91.6\% accuracy).\footnote{\url{https://huggingface.co/dchen0/font-classifier}} A small proof-of-concept trained on a handful of families (Inter, Roboto, Poppins, and several others). High accuracy, but the narrow label space did not cover enough fonts to be useful in practice.
-
-    \item \textbf{v2} (many dozens of families, 700 variants).\footnote{\url{https://huggingface.co/dchen0/font-classifier-v2}} A broad expansion that included a large portion of the Google Fonts catalog. The much larger label space introduced many visually near-identical font pairs (e.g., families that differ only in minor spacing or hinting), causing widespread confusion between classes and degrading accuracy.
-
-    \item \textbf{v3} (20 families, 300 variants, 59\% accuracy).\footnote{\url{https://huggingface.co/dchen0/font-classifier-v3}} Scaled back from v2 by removing duplicate-like families, but the training dataset was too small (approximately 9,400 images) relative to the label count, and several included families still overlapped visually. Accuracy dropped significantly.
-
-    \item \textbf{v4} (32 families, 394 variants, 86\% accuracy).\footnote{\url{https://huggingface.co/dchen0/font_classifier_v4}} The current version. The font set was rebuilt from scratch using the three selection criteria described above. The training dataset was scaled up substantially (approximately 575 images per variant). A critical engineering fix---embedding preprocessing into the model's \texttt{forward} method---eliminated train-serve skew that had silently hurt earlier versions.
-\end{itemize}
-
-Each dataset is publicly available on HuggingFace.\footnote{\url{https://huggingface.co/datasets/dchen0/font_crops}}\textsuperscript{,}\footnote{\url{https://huggingface.co/datasets/dchen0/font_crops_v4}}
+The final font set is the result of four dataset iterations, each informed by the failures of the previous version. An initial proof-of-concept with 10~families (102~variants) achieved high accuracy but covered too few fonts to be practical. Expanding aggressively to over 700~variants from the broader Google Fonts catalog introduced many visually near-identical pairs (families differing only in minor spacing or hinting), which degraded accuracy substantially. Scaling back to 20~families helped but exposed insufficient training data and residual visual overlaps. The current version rebuilds the font set from scratch using the selection criteria described above, settling on 32~families with 394~variants and approximately 575~training images per variant. A critical engineering fix in this iteration---embedding preprocessing into the model's \texttt{forward} method---eliminated train--serve skew that had silently hurt earlier versions. All dataset versions are publicly available on HuggingFace.\footnote{\url{https://huggingface.co/datasets/dchen0/font_crops_v4}}
 
 \subsection{Synthetic Image Generation}
 
@@ -202,7 +190,7 @@ A checkpoint (a full snapshot of the model weights, optimizer state, and trainin
 
 \subsection{Infrastructure}
 
-Training is conducted using PyTorch with HuggingFace Transformers and the PEFT library for LoRA integration. The training script automatically selects the best available hardware accelerator: Apple MPS (Metal Performance Shaders, for Apple Silicon GPUs) is preferred if available, followed by CUDA (for NVIDIA GPUs), with CPU as a fallback. Mixed-precision training (FP16) is enabled on CUDA to reduce memory usage and training time; MPS and CPU use full FP32 precision. TensorBoard is used for monitoring training and validation metrics in real time.
+Training is conducted using PyTorch with HuggingFace Transformers and the PEFT library for LoRA integration. The training script automatically selects the best available hardware accelerator at runtime. Mixed-precision training (FP16) is enabled on CUDA devices to reduce memory usage and training time.
 
 % ---- 6. Results ----
 \section{Results}
@@ -312,18 +300,34 @@ SWER (random baseline) & \swerRandom{} \\
 
 Figure~\ref{fig:dendrogram} visualizes the font family similarity hierarchy recovered by UPGMA clustering on the centroid distances. Serif, sans-serif, monospace, and display families occupy distinct branches, confirming that the embedding space captures typographic structure.
 
+\subsection{Baseline Comparisons}
+
+To contextualize the efficiency--accuracy trade-off of our LoRA approach, we compare against standard fine-tuning strategies applied to the same DINOv2-Base backbone and dataset. Table~\ref{tab:baselines} reports the results.
+
+\begin{table}[h]
+\centering
+\caption{Comparison of fine-tuning strategies on DINOv2-Base with 394 font classes. All methods use the same training data, hyperparameters (where applicable), and evaluation protocol. Values will be filled after experiments are completed.}
+\label{tab:baselines}
+\begin{tabular}{lrrrr}
+\toprule
+\textbf{Method} & \textbf{Trainable Params} & \textbf{Top-1 Acc} & \textbf{Family Acc} & \textbf{SWER} \\
+\midrule
+Linear Probe         & --    & --  & --  & -- \\
+Full Fine-Tuning     & 87.2M & --  & --  & -- \\
+LoRA ($r{=}8$)       & 900K  & --  & --  & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Generalization to Real-World Images}
+
+While our model is trained entirely on synthetically rendered text, practical deployment requires robustness to real-world typography encountered in screenshots, photographs of signage, and web page captures. We are assembling a manually collected evaluation set of web typography images spanning diverse fonts, backgrounds, and capture conditions. Results on this real-world benchmark will be reported in a future revision.
+
 
 % ---- 7. Deployment ----
 \section{Deployment}
 
-The trained model is released on HuggingFace Hub as \texttt{dchen0/font\_classifier\_v4}.\footnote{\url{https://huggingface.co/dchen0/font_classifier_v4}} To simplify deployment, we merge the LoRA adapters into the base weights before upload, collapsing each low-rank update into its corresponding weight matrix (see Section~\ref{sec:lora}). The merged model produces identical outputs but no longer requires the PEFT library at inference time.
-
-The model supports three deployment modes:
-\begin{enumerate}[leftmargin=*]
-    \item \textbf{HuggingFace Inference Endpoints.} A custom \texttt{handler.py} accepts raw bytes, base64-encoded strings, or PIL images, applies standardized preprocessing, and returns top-5 predictions with softmax confidence scores.
-    \item \textbf{HuggingFace Pipeline.} Standard \texttt{pipeline("image-classification")} usage with automatic model and processor loading.
-    \item \textbf{Local inference.} A command-line tool (\texttt{serve\_model.py}) for single-image prediction with top-5 output.
-\end{enumerate}
+The trained model is released on HuggingFace Hub as \texttt{dchen0/font\_classifier\_v4}.\footnote{\url{https://huggingface.co/dchen0/font_classifier_v4}} Before upload, the LoRA adapters are merged into the base weights (see Section~\ref{sec:lora}), so the published checkpoint requires no additional libraries beyond HuggingFace Transformers. A custom \texttt{handler.py} is included for HuggingFace Inference Endpoints, accepting raw image bytes or base64-encoded strings and returning top-5 predictions with softmax confidence scores.
 
 % ---- 8. Discussion ----
 \section{Discussion}
