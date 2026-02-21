@@ -3,10 +3,10 @@
 # Cloud training setup script
 #
 # Usage (on a cloud GPU instance):
-#   bash cloud_train.sh --hf_dataset dchen0/font_crops_v4 --mode lora
-#   bash cloud_train.sh --hf_dataset dchen0/font_crops_v4 --mode full
-#   bash cloud_train.sh --hf_dataset dchen0/font_crops_v4 --mode linear
-#   bash cloud_train.sh --hf_dataset dchen0/font_crops_v4 --mode all
+#   bash cloud_train.sh --hf_dataset dchen0/font_crops_v5 --mode lora
+#   bash cloud_train.sh --hf_dataset dchen0/font_crops_v5 --mode full
+#   bash cloud_train.sh --hf_dataset dchen0/font_crops_v5 --mode linear
+#   bash cloud_train.sh --hf_dataset dchen0/font_crops_v5 --mode all
 #
 # Requirements:
 #   - NVIDIA GPU with CUDA

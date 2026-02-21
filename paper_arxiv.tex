@@ -95,7 +95,7 @@ We source fonts from the Google Fonts open-source repository.\footnote{\url{http
 
 \subsubsection{Iterative Font Curation}
 
-The final font set is the result of four dataset iterations, each informed by the failures of the previous version. An initial proof-of-concept with 10~families (102~variants) achieved high accuracy but covered too few fonts to be practical. Expanding aggressively to over 700~variants from the broader Google Fonts catalog introduced many visually near-identical pairs (families differing only in minor spacing or hinting), which degraded accuracy substantially. Scaling back to 20~families helped but exposed insufficient training data and residual visual overlaps. The current version rebuilds the font set from scratch using the selection criteria described above, settling on 32~families with 394~variants and approximately 575~training images per variant. A critical engineering fix in this iteration---embedding preprocessing into the model's \texttt{forward} method---eliminated train--serve skew that had silently hurt earlier versions. All dataset versions are publicly available on HuggingFace.\footnote{\url{https://huggingface.co/datasets/dchen0/font_crops_v4}}
+The final font set is the result of four dataset iterations, each informed by the failures of the previous version. An initial proof-of-concept with 10~families (102~variants) achieved high accuracy but covered too few fonts to be practical. Expanding aggressively to over 700~variants from the broader Google Fonts catalog introduced many visually near-identical pairs (families differing only in minor spacing or hinting), which degraded accuracy substantially. Scaling back to 20~families helped but exposed insufficient training data and residual visual overlaps. The current version rebuilds the font set from scratch using the selection criteria described above, settling on 32~families with 394~variants and approximately 575~training images per variant. A critical engineering fix in this iteration---embedding preprocessing into the model's \texttt{forward} method---eliminated train--serve skew that had silently hurt earlier versions. All dataset versions are publicly available on HuggingFace.\footnote{\url{https://huggingface.co/datasets/dchen0/font_crops_v5}}
 
 \subsection{Synthetic Image Generation}
 
@@ -113,7 +113,7 @@ We generate training images by rendering text strings in each font variant onto 
     \item \textbf{Noise augmentation.} Per-pixel Gaussian noise is added to improve robustness to compression artifacts and sensor noise. Each pixel channel value $p \in [0, 255]$ is replaced by $\mathrm{clamp}(p + \mathcal{N}(0,\, \sigma^2),\; 0,\; 255)$ where $\sigma = 0.10 \times 255 = 25.5$. In practice this means most pixel values are perturbed by roughly $\pm$25 intensity levels.
 \end{enumerate}
 
-The resulting dataset, \texttt{font\_crops\_v4},\footnote{\url{https://huggingface.co/datasets/dchen0/font_crops_v4}} contains approximately 575 training images per font variant, with a held-out test set of 40 images per variant.
+The resulting dataset, \texttt{font\_crops\_v5},\footnote{\url{https://huggingface.co/datasets/dchen0/font_crops_v5}} contains approximately 575 training images per font variant, with a held-out test set of 40 images per variant.
 
 \subsection{Data Validation}
 
