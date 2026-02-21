@@ -125,10 +125,9 @@ def get_transform(processor: AutoImageProcessor, size: int):
     aug = get_inference_transform(processor, size)
 
     def transform(example, train=True):
-        # The dataset uses 'image' as the key for PIL images
-        # Use the processor directly - it handles pad_to_square + standard preprocessing
-        inputs = processor(images=example["image"], return_tensors="pt")
-        example["pixel_values"] = inputs["pixel_values"].squeeze(0)  # Remove batch dimension for dataset
+        # Apply the same pad-to-square + resize + normalize pipeline used at inference
+        # (defined in handler.py) to ensure no train/serve skew.
+        example["pixel_values"] = aug(example["image"])
         return example
 
     return transform
@@ -261,6 +260,7 @@ if __name__ == "__main__":
         save_total_limit   = 3,
         logging_dir        = os.path.join(args.output_dir, "logs") if args.output_dir else None,
         logging_steps      = 10,
+        dataloader_num_workers = 4,
         report_to          = "tensorboard",
         load_best_model_at_end = True,
         metric_for_best_model = "eval_accuracy",
