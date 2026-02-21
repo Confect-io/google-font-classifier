@@ -49,6 +49,8 @@ def parse_args():
                       help='LoRA dropout rate')
     parser.add_argument('--full_finetune', action='store_true',
                       help='Full fine-tuning baseline (no LoRA). Mutually exclusive with --checkpoint.')
+    parser.add_argument('--linear_probe', action='store_true',
+                      help='Linear probe baseline (freeze backbone, train classifier only).')
     parser.add_argument('--test_size', type=float, default=0.1,
                       help='Proportion of data to use for validation')
     parser.add_argument('--seed', type=int, default=42,
@@ -138,8 +140,9 @@ def get_transform(processor: AutoImageProcessor, size: int):
 if __name__ == "__main__":
     args = parse_args()
 
-    if args.full_finetune and args.checkpoint:
-        raise ValueError("--full_finetune and --checkpoint are mutually exclusive (checkpoints are PEFT checkpoints).")
+    n_modes = sum([args.full_finetune, args.linear_probe, bool(args.checkpoint)])
+    if n_modes > 1:
+        raise ValueError("--full_finetune, --linear_probe, and --checkpoint are mutually exclusive.")
 
     # Configure logging with timestamps
     logging.basicConfig(
@@ -211,7 +214,14 @@ if __name__ == "__main__":
             ignore_mismatched_sizes=True,
         )
 
-    if args.full_finetune:
+    if args.linear_probe:
+        logger.info("Linear probe mode: freezing backbone, training classifier only")
+        for param in base.parameters():
+            param.requires_grad = False
+        for param in base.classifier.parameters():
+            param.requires_grad = True
+        model = base
+    elif args.full_finetune:
         logger.info("Full fine-tuning mode: unfreezing all parameters (no LoRA)")
         for param in base.parameters():
             param.requires_grad = True
@@ -315,7 +325,7 @@ if __name__ == "__main__":
 
         with tempfile.TemporaryDirectory() as tmp:
             # Merge the PEFT weights into the base model so that we upload an independent complete model.
-            if args.full_finetune:
+            if args.full_finetune or args.linear_probe:
                 merged = trainer.model
             else:
                 merged = trainer.model.merge_and_unload()
