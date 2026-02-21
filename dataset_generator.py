@@ -183,6 +183,27 @@ def render_and_crop(text, font, padding, img_size):
     lines = text.split('\n')
     line_height = font.getbbox('Ay')[3] - font.getbbox('Ay')[1]
     line_spacing = int(line_height * 0.2)
+
+    # Word-wrap long lines to keep the aspect ratio reasonable.
+    # Without this, a long single-line sentence renders as e.g. 8000x224,
+    # which after pad-to-square + resize becomes a tiny unreadable stripe.
+    # Cap each line at ~8 * line_height pixels wide (produces ~2:1 to 4:1 images).
+    max_line_px = line_height * 8
+    wrapped = []
+    for line in lines:
+        words = line.split(' ')
+        current = words[0] if words else ''
+        for word in words[1:]:
+            test = current + ' ' + word
+            bbox = font.getbbox(test)
+            if bbox[2] - bbox[0] > max_line_px:
+                wrapped.append(current)
+                current = word
+            else:
+                current = test
+        wrapped.append(current)
+    lines = wrapped
+
     total_height = len(lines) * line_height + (len(lines) - 1) * line_spacing
 
     max_width = 0
@@ -265,7 +286,7 @@ def _generate_variant(args):
             return
         img = render_and_crop(string, font, padding, img_size)
         if img is not None:
-            img.save(target_file)
+            img.save(target_file, compress_level=1)
 
     # Training set
     for _ in range(500):
