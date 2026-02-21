@@ -68,16 +68,13 @@ snapshot_download(repo_id='$HF_DATASET', repo_type='dataset', local_dir='data')
 "
 
 # If dataset is packed as tar files, extract them
-if [ -f "data/train.tar" ]; then
-    echo "==> Extracting train.tar..."
-    tar xf data/train.tar -C data/
-    rm data/train.tar
-fi
-if [ -f "data/test.tar" ]; then
-    echo "==> Extracting test.tar..."
-    tar xf data/test.tar -C data/
-    rm data/test.tar
-fi
+for tarfile in data/train*.tar data/test*.tar; do
+    if [ -f "$tarfile" ]; then
+        echo "==> Extracting $tarfile..."
+        tar xf "$tarfile" -C data/
+        rm "$tarfile"
+    fi
+done
 
 # --- 4. Run training ---
 run_training() {
