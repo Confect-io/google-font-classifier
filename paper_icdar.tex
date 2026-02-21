@@ -39,7 +39,7 @@
 
 % ---- Abstract ----
 \begin{abstract}
-We present a font classification system capable of identifying 394 font families from rendered text images. Our approach fine-tunes a DINOv2 Vision Transformer using Low-Rank Adaptation (LoRA), achieving approximately 86\% top-1 accuracy while training fewer than 1\% of the model's 87.2M parameters. We introduce a synthetic dataset generation pipeline that renders Google Fonts at scale with diverse augmentations including randomized colors, alignment, line wrapping, and Gaussian noise, producing training images that generalize to real-world typographic samples. The model incorporates built-in preprocessing to ensure consistency between training and inference, and is deployed as a publicly available inference endpoint. We release the model, dataset, and full training pipeline as open-source resources.
+We present a font classification system capable of identifying 394 font variants across 32 families from rendered text images. Our approach fine-tunes a DINOv2 Vision Transformer using Low-Rank Adaptation (LoRA), achieving approximately 86\% top-1 accuracy while training roughly 1\% of the model's 87.2M parameters. We introduce a synthetic dataset generation pipeline that renders Google Fonts at scale with diverse augmentations including randomized colors, alignment, line wrapping, and Gaussian noise, producing training images that generalize to real-world typographic samples. The model incorporates built-in preprocessing to ensure consistency between training and inference, and is deployed as a publicly available inference endpoint. We release the model, dataset, and full training pipeline as open-source resources.
 \keywords{Font classification \and Vision Transformer \and LoRA \and DINOv2 \and Parameter-efficient fine-tuning}
 \end{abstract}
 
@@ -145,7 +145,7 @@ We apply LoRA to the query ($W_Q$) and value ($W_V$) projection matrices in each
 \end{equation}
 where $r \ll d$ is the rank. We use $r = 8$ and scaling factor $\alpha = 16$. The scaling factor controls the magnitude of the low-rank update: the actual weight modification applied is $\frac{\alpha}{r} \Delta W$, so with $\alpha = 16$ and $r = 8$ the update is scaled by a factor of 2. Dropout with probability 0.1 is applied to the low-rank matrices $A$ and $B$ during training as regularization. The base model weights remain frozen; only the LoRA parameters and the randomly initialized classification head are updated.
 
-This configuration adds approximately 150K trainable parameters on top of the 87M frozen backbone parameters, representing less than 0.2\% of the total model size.
+This configuration adds approximately 295K trainable LoRA parameters. Together with the 606K-parameter classification head (which is also trainable), the total number of trainable parameters is approximately 900K, or roughly 1\% of the 87M frozen backbone.
 
 \subsection{Preprocessing}
 
@@ -326,7 +326,7 @@ The model supports three deployment modes:
 % ---- 9. Conclusion ----
 \section{Conclusion}
 
-We have presented a font classification system that identifies 394 font variants with 86\% accuracy by fine-tuning a DINOv2 Vision Transformer with LoRA. The approach is parameter-efficient, training fewer than 0.2\% of model parameters, and is supported by a reproducible synthetic data generation pipeline. The model, dataset, and code are publicly available to support further research in document analysis and typographic recognition.\footnote{Source code URL anonymized for review.}
+We have presented a font classification system that identifies 394 font variants with 86\% accuracy by fine-tuning a DINOv2 Vision Transformer with LoRA. The approach is parameter-efficient, training roughly 1\% of model parameters, and is supported by a reproducible synthetic data generation pipeline. The model, dataset, and code are publicly available to support further research in document analysis and typographic recognition.\footnote{Source code URL anonymized for review.}
 
 % ---- Acknowledgments (commented out for double-blind review) ----
 %\begin{credits}
