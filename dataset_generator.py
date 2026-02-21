@@ -317,20 +317,32 @@ def build_dataset(font_dir, out_dir, chars, font_size, img_size, padding, no_clo
     # Preload text corpus
     corpus = _load_text_corpus()
 
-    # Enumerate all (font_path, variant) work items
+    # Enumerate all (font_path, variant) work items, deduplicating by output label
     work_items = []
+    seen_labels = {}  # label -> font_path (for duplicate detection)
     for font_path in sorted(font_paths):
         font_family_name = font_path.stem.split("[")[0]
         try:
             if font_is_variable(font_path):
                 font = ImageFont.truetype(str(font_path), font_size, layout_engine=ImageFont.Layout.BASIC)
                 for variation in font.get_variation_names():
+                    variant_str = variation.decode("utf-8").replace(" ", "_")
+                    label = f"{font_family_name}_{variant_str}"
+                    if label in seen_labels:
+                        logger.warning(f"Skipping duplicate label '{label}' from {font_path.name} (already from {seen_labels[label].name})")
+                        continue
+                    seen_labels[label] = font_path
                     work_items.append((
                         font_path, font_family_name, variation,
                         str(train_dir), str(test_dir),
                         font_size, img_size, padding, no_clobber,
                     ))
             else:
+                label = font_family_name
+                if label in seen_labels:
+                    logger.warning(f"Skipping duplicate label '{label}' from {font_path.name} (already from {seen_labels[label].name})")
+                    continue
+                seen_labels[label] = font_path
                 work_items.append((
                     font_path, font_family_name, None,
                     str(train_dir), str(test_dir),
@@ -339,7 +351,8 @@ def build_dataset(font_dir, out_dir, chars, font_size, img_size, padding, no_clo
         except Exception as e:
             logger.error(f"Failed to enumerate variants for {font_path.name}: {e}")
 
-    print(f"Generating images for {len(work_items)} font variants using {workers} workers ...")
+    print(f"Found {len(work_items)} unique font variants from {len(font_paths)} font files")
+    print(f"Generating images using {workers} workers ...")
 
     with multiprocessing.Pool(workers, initializer=_worker_init, initargs=(corpus,)) as pool:
         for name in tqdm(
