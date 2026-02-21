@@ -37,6 +37,14 @@ if [ "$SKIP_MATRIX" = false ]; then
     "$VENV_DIR/bin/pip" install -q -r requirements.txt
     echo "==> Running confusion_matrix.py ${EXTRA_ARGS[*]}"
     "$VENV_DIR/bin/python" confusion_matrix.py "${EXTRA_ARGS[@]}"
+else
+    # Warn if metrics.tex is missing or stale (older than 7 days)
+    if [ ! -f figures/metrics.tex ]; then
+        echo "WARNING: figures/metrics.tex not found. Paper will use placeholder values."
+        echo "         Run without --skip-matrix to generate fresh metrics."
+    elif [ "$(find figures/metrics.tex -mtime +7 2>/dev/null)" ]; then
+        echo "WARNING: figures/metrics.tex is older than 7 days. Consider regenerating."
+    fi
 fi
 
 build_tex() {

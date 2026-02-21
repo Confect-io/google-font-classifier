@@ -88,6 +88,15 @@ def evaluate(model, transform, test_dir, batch_size, device):
     labels = sorted(os.listdir(test_dir))
     labels = [l for l in labels if os.path.isdir(os.path.join(test_dir, l))]
 
+    # Check for empty class directories
+    empty_classes = [
+        l for l in labels
+        if len(os.listdir(os.path.join(test_dir, l))) == 0
+    ]
+    if empty_classes:
+        print(f"  WARNING: {len(empty_classes)} empty test class dirs (will be skipped): {empty_classes[:5]}{'...' if len(empty_classes) > 5 else ''}")
+        labels = [l for l in labels if l not in set(empty_classes)]
+
     batch_paths, batch_labels = [], []
 
     def flush():
