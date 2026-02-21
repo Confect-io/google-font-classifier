@@ -106,16 +106,20 @@ case "$MODE" in
     linear)
         run_training "linear_probe" "--linear_probe"
         ;;
+    resnet)
+        run_training "resnet50" "--resnet_baseline"
+        ;;
     all)
         # Run linear probe first (fastest to converge)
         run_training "linear_probe" "--linear_probe --epochs 20"
+        run_training "resnet50" "--resnet_baseline"
         run_training "lora_r4" "--lora_rank 4 --lora_alpha 8"
         run_training "lora_r8" ""
         run_training "lora_r16" "--lora_rank 16 --lora_alpha 32"
         run_training "full_finetune" "--full_finetune"
         ;;
     *)
-        echo "Unknown mode: $MODE (use lora, lora4, lora16, full, linear, or all)"
+        echo "Unknown mode: $MODE (use lora, lora4, lora16, full, linear, resnet, or all)"
         exit 1
         ;;
 esac

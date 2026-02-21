@@ -51,6 +51,8 @@ def parse_args():
                       help='Full fine-tuning baseline (no LoRA). Mutually exclusive with --checkpoint.')
     parser.add_argument('--linear_probe', action='store_true',
                       help='Linear probe baseline (freeze backbone, train classifier only).')
+    parser.add_argument('--resnet_baseline', action='store_true',
+                      help='CNN baseline: fine-tune a ResNet-50 instead of DINOv2.')
     parser.add_argument('--test_size', type=float, default=0.1,
                       help='Proportion of data to use for validation')
     parser.add_argument('--seed', type=int, default=42,
@@ -140,9 +142,9 @@ def get_transform(processor: AutoImageProcessor, size: int):
 if __name__ == "__main__":
     args = parse_args()
 
-    n_modes = sum([args.full_finetune, args.linear_probe, bool(args.checkpoint)])
+    n_modes = sum([args.full_finetune, args.linear_probe, args.resnet_baseline, bool(args.checkpoint)])
     if n_modes > 1:
-        raise ValueError("--full_finetune, --linear_probe, and --checkpoint are mutually exclusive.")
+        raise ValueError("--full_finetune, --linear_probe, --resnet_baseline, and --checkpoint are mutually exclusive.")
 
     # Configure logging with timestamps
     logging.basicConfig(
@@ -206,15 +208,47 @@ if __name__ == "__main__":
         
         logger.info("Data preprocessing complete")
 
-    logger.info("Loading DINOv2 model")
-    
-    base = Dinov2ForImageClassification.from_pretrained(
-            MODEL,
-            num_labels=len(label_names),
-            ignore_mismatched_sizes=True,
-        )
+    if args.resnet_baseline:
+        from torchvision.models import resnet50, ResNet50_Weights
+        logger.info("Loading ResNet-50 (ImageNet-pretrained) as CNN baseline")
+        resnet = resnet50(weights=ResNet50_Weights.IMAGENET1K_V2)
+        resnet.fc = torch.nn.Linear(resnet.fc.in_features, len(label_names))
 
-    if args.linear_probe:
+        # Wrap in a simple class so Trainer sees .config and outputs logits correctly
+        class ResNetForImageClassification(torch.nn.Module):
+            def __init__(self, backbone, id2label):
+                super().__init__()
+                self.backbone = backbone
+                from transformers import PretrainedConfig
+                self.config = PretrainedConfig()
+                self.config.id2label = id2label
+                self.config.label2id = {v: k for k, v in id2label.items()}
+                self.config.num_labels = len(id2label)
+
+            def forward(self, pixel_values, labels=None):
+                logits = self.backbone(pixel_values)
+                loss = None
+                if labels is not None:
+                    loss = torch.nn.functional.cross_entropy(logits, labels)
+                return type('Output', (), {'loss': loss, 'logits': logits})()
+
+        id2label = {i: name for i, name in enumerate(label_names)}
+        model = ResNetForImageClassification(resnet, id2label)
+        trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        total = sum(p.numel() for p in model.parameters())
+        logger.info(f"trainable params: {trainable:,} || all params: {total:,} || trainable%: {100 * trainable / total:.4f}")
+    else:
+        logger.info("Loading DINOv2 model")
+
+        base = Dinov2ForImageClassification.from_pretrained(
+                MODEL,
+                num_labels=len(label_names),
+                ignore_mismatched_sizes=True,
+            )
+
+    if args.resnet_baseline:
+        pass  # model already set above
+    elif args.linear_probe:
         logger.info("Linear probe mode: freezing backbone, training classifier only")
         for param in base.parameters():
             param.requires_grad = False
@@ -325,7 +359,7 @@ if __name__ == "__main__":
 
         with tempfile.TemporaryDirectory() as tmp:
             # Merge the PEFT weights into the base model so that we upload an independent complete model.
-            if args.full_finetune or args.linear_probe:
+            if args.full_finetune or args.linear_probe or args.resnet_baseline:
                 merged = trainer.model
             else:
                 merged = trainer.model.merge_and_unload()
