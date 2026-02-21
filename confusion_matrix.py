@@ -32,10 +32,9 @@ from handler import get_inference_transform
 
 def parse_args():
     p = argparse.ArgumentParser(description="Evaluate font classifier and produce figures.")
-    p.add_argument("--data_dir", type=str,
-                   default=".data_out/PROD_font_dataset_top_20_20250716",
+    p.add_argument("--data_dir", type=str, required=True,
                    help="Root of dataset (must contain a test/ subdirectory)")
-    p.add_argument("--model", type=str, default="dchen0/font_classifier_v4",
+    p.add_argument("--model", type=str, required=True,
                    help="HuggingFace model name or local path")
     p.add_argument("--batch_size", type=int, default=32,
                    help="Batch size for inference")

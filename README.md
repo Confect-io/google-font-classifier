@@ -158,9 +158,11 @@ To evaluate the model on a test set and generate paper-ready figures:
 
 ```bash
 python confusion_matrix.py \
-    --data_dir .data_out/PROD_font_dataset_top_20_20250716 \
-    --model dchen0/font_classifier_v4
+    --data_dir <dataset folder> \
+    --model <HuggingFace model name or local path>
 ```
+
+**Important:** The model's label set must match the dataset's class folders. Use the model that was trained on (or matches) your dataset.
 
 This produces:
 - `figures/confusion_matrix.pdf` — Row-normalized confusion matrix heatmap grouped by font family
@@ -193,7 +195,7 @@ bash build_paper.sh --skip-matrix
 Extra arguments are forwarded to `confusion_matrix.py`:
 
 ```bash
-bash build_paper.sh --data_dir .data_out/my_dataset --model dchen0/font_classifier_v4
+bash build_paper.sh --data_dir <dataset folder> --model <HuggingFace model name or local path>
 ```
 
 ## Handler.py
