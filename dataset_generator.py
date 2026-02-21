@@ -4,6 +4,8 @@ Generate cropped glyph images for DINO‑v2 fine‑tuning.
 """
 import argparse
 import logging
+import multiprocessing
+import os
 import pathlib
 import random
 import sys
@@ -18,7 +20,6 @@ from tqdm import tqdm
 Image.MAX_IMAGE_PIXELS = None
 
 logger = logging.getLogger(__name__)
-LENGTH_OF_STRINGS = 2
 
 ASCII_CHARS = (
     "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -63,6 +64,45 @@ FONT_ALLOWLIST = [
 "Roboto",
 ]
 
+# ---------------------------------------------------------------------------
+# Text corpus (preloaded into memory for workers)
+# ---------------------------------------------------------------------------
+
+_TEXT_CORPUS = None  # populated by _load_text_corpus()
+
+def _load_text_corpus():
+    """Read all text files from input_data/ into a list of strings."""
+    input_data_dir = pathlib.Path("input_data")
+    if not input_data_dir.exists():
+        raise ValueError(f"Input data directory {input_data_dir} does not exist")
+    texts = []
+    for txt_file in sorted(input_data_dir.glob("*.txt")):
+        content = txt_file.read_text(encoding="utf-8").strip()
+        if len(content) >= 100:
+            texts.append(content)
+    if not texts:
+        raise ValueError(f"No usable text files found in {input_data_dir}")
+    return texts
+
+
+def choose_sentence(corpus):
+    """Choose a random substring from the preloaded corpus."""
+    content = random.choice(corpus)
+    substring_length = random.randint(20, 100)
+    start_pos = random.randint(0, len(content) - substring_length)
+    substring = content[start_pos:start_pos + substring_length]
+    # Randomly replace some spaces with newlines
+    substring = ''.join(
+        '\n' if c == ' ' and random.random() < 0.2 else c
+        for c in substring
+    )
+    return substring.strip() or None
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
 def font_is_variable(font_path: pathlib.Path) -> bool:
     return "fvar" in TTFont(str(font_path))
 
@@ -70,13 +110,11 @@ def char_set(name: str) -> str:
     if name == "ascii":
         return ASCII_CHARS
     if name == "letters":
-        return ASCII_CHARS[:52] + " \n\t"          # A‑Z a‑z only
-    # Interpret any other string as a literal char list:
+        return ASCII_CHARS[:52] + " \n\t"
     return name
 
 def sanitize_filename(text: str) -> str:
     """Sanitize a string to be safe for use in filenames."""
-    # Replace problematic characters with safe alternatives
     replacements = {
         '/': '_slash_',
         '\\': '_backslash_',
@@ -110,295 +148,248 @@ def sanitize_filename(text: str) -> str:
         '.': '_dot_',
         "'": "_single_quote_",
     }
-    
     sanitized = text
     for char, replacement in replacements.items():
         sanitized = sanitized.replace(char, replacement)
-
     if len(sanitized) > 200:
         sanitized = "nameTooLong" + str(random.randint(0, 1000000))
-    
     return sanitized
 
-def render_and_crop(text: str, font: ImageFont.FreeTypeFont,
-                     padding: int,
-                    img_size: int) -> Image.Image:
+
+# ---------------------------------------------------------------------------
+# Rendering
+# ---------------------------------------------------------------------------
+
+def render_and_crop(text, font, padding, img_size):
     # Generate random background and text colors with sufficient contrast
-    def generate_contrasting_colors():
-        def random_rgb():
-            return (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
-        
-        def luminance(color):
-            # Calculate perceived brightness using standard formula
-            r, g, b = color
-            return 0.299 * r + 0.587 * g + 0.114 * b
-        
-        # Generate background color
-        bg_color = random_rgb()
-        bg_luminance = luminance(bg_color)
-        
-        # Generate text color with sufficient contrast
-        min_luminance_diff = 80
-        max_attempts = 50
-        
-        for _ in range(max_attempts):
-            text_color = random_rgb()
-            text_luminance = luminance(text_color)
-            
-            # Check if luminance difference is sufficient
-            if abs(bg_luminance - text_luminance) >= min_luminance_diff:
-                return bg_color, text_color
-        
-        # Fallback: if we can't find a good random contrast, use black/white
-        if bg_luminance < 128:
-            text_color = (255, 255, 255)  # white text on dark background
-        else:
-            text_color = (0, 0, 0)  # black text on light background
-            
-        return bg_color, text_color
-    
-    bg_color, text_color = generate_contrasting_colors()
-    
-    # Handle multi-line text properly
+    def random_rgb():
+        return (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
+
+    def luminance(color):
+        r, g, b = color
+        return 0.299 * r + 0.587 * g + 0.114 * b
+
+    bg_color = random_rgb()
+    bg_lum = luminance(bg_color)
+    text_color = None
+    for _ in range(50):
+        candidate = random_rgb()
+        if abs(bg_lum - luminance(candidate)) >= 80:
+            text_color = candidate
+            break
+    if text_color is None:
+        text_color = (255, 255, 255) if bg_lum < 128 else (0, 0, 0)
+
     lines = text.split('\n')
-    
-    # Calculate dimensions for multi-line text
-    line_height = font.getbbox('Ay')[3] - font.getbbox('Ay')[1]  # Height from A to y (covers ascenders and descenders)
-    line_spacing = int(line_height * 0.2)  # 20% additional spacing between lines
-    
-    # Calculate total text dimensions
-    max_width = 0
+    line_height = font.getbbox('Ay')[3] - font.getbbox('Ay')[1]
+    line_spacing = int(line_height * 0.2)
     total_height = len(lines) * line_height + (len(lines) - 1) * line_spacing
-    
+
+    max_width = 0
     for line in lines:
-        if line.strip():  # Skip empty lines for width calculation
+        if line.strip():
             left, top, right, bottom = font.getbbox(line)
-            line_width = right - left
-            max_width = max(max_width, line_width)
-    
-    # Use larger dimensions for canvas to ensure nothing gets cropped
+            max_width = max(max_width, right - left)
+
     canvas_width = max_width + padding * 2
     canvas_height = int(total_height) + padding * 2
-    
-    # Create canvas with random background color
+
     canvas = Image.new("RGB", (canvas_width, canvas_height), bg_color)
     draw = ImageDraw.Draw(canvas)
-    
-    # Draw each line of text with random alignment
+
     alignment = random.choice(['left', 'center', 'right'])
     start_y = padding
     for i, line in enumerate(lines):
-        if line.strip():  # Skip completely empty lines
+        if line.strip():
             line_bbox = font.getbbox(line)
             line_width = line_bbox[2] - line_bbox[0]
-            
-            # Calculate x position based on random alignment
             if alignment == 'left':
                 text_x = padding
             elif alignment == 'center':
                 text_x = (canvas_width - line_width) // 2
-            else:  # right
+            else:
                 text_x = canvas_width - line_width - padding
-                
             text_y = start_y + i * (line_height + line_spacing)
-            
-            draw.text(
-                (text_x, text_y),
-                line,
-                fill=text_color,
-                font=font,
-                anchor="lt",  # left-top anchor for precise positioning
-            )
-    
-    # Find bbox of non-background pixels
+            draw.text((text_x, text_y), line, fill=text_color, font=font, anchor="lt")
+
     bbox = canvas.getbbox()
-    if not bbox:  # empty glyph
+    if not bbox:
         return None
     glyph = canvas.crop(bbox)
-    
-    # For text sequences, we want to maintain the aspect ratio but ensure the height fits
-    # Calculate the target height while maintaining aspect ratio
+
     target_height = img_size
     aspect_ratio = glyph.width / glyph.height
     target_width = int(target_height * aspect_ratio)
-    
-    # Resize maintaining aspect ratio
     resized_glyph = glyph.resize((target_width, target_height), Image.Resampling.LANCZOS)
-    
-    # Add gaussian noise using numpy (vectorized)
-    def add_gaussian_noise(img, noise_factor=0.1):
-        arr = np.array(img, dtype=np.float32)
-        noise = np.random.normal(0, noise_factor * 255, arr.shape).astype(np.float32)
-        arr = np.clip(arr + noise, 0, 255).astype(np.uint8)
-        return Image.fromarray(arr)
 
-    return add_gaussian_noise(resized_glyph)
+    # Add gaussian noise (vectorized)
+    arr = np.array(resized_glyph, dtype=np.float32)
+    noise = np.random.normal(0, 0.1 * 255, arr.shape).astype(np.float32)
+    arr = np.clip(arr + noise, 0, 255).astype(np.uint8)
+    return Image.fromarray(arr)
 
 
-def choose_sentence():
-    """Choose a random substring from text files in input_data directory."""
-    
-    input_data_dir = pathlib.Path("input_data")
-    if not input_data_dir.exists():
-        raise ValueError(f"Input data directory {input_data_dir} does not exist")
-    
-    # Find all text files
-    text_files = list(input_data_dir.glob("*.txt"))
-    if not text_files:
-        raise ValueError(f"No text files found in {input_data_dir}")
-    
-    # Choose a random text file
-    text_file = random.choice(text_files)
-    
-    try:
-        with open(text_file, 'r', encoding='utf-8') as f:
-            content = f.read().strip()
-        
-        if len(content) < 100:  # Skip very short files
-            raise ValueError(f"File {text_file} is too short")
-        
-        # Choose random substring length
-        substring_length = random.randint(20, 100)
-        
-        # Choose random starting position
-        start_pos = random.randint(0, len(content) - substring_length)
-        
-        # Extract substring
-        substring = content[start_pos:start_pos + substring_length]
+# ---------------------------------------------------------------------------
+# Per-variant worker (runs in a subprocess)
+# ---------------------------------------------------------------------------
 
-        # Randomly replace some spaces with newlines
-        CHANCE_TO_REPLACE_SPACE_WITH_NEWLINE = 0.2
-        substring = ''.join('\n' if char == ' ' and random.random() < CHANCE_TO_REPLACE_SPACE_WITH_NEWLINE else char for char in substring)
-        
-        return substring.strip()
-        
-    except Exception as e:
-        logger.warning(f"Error reading {text_file}: {e}")
-        return None
+def _worker_init(corpus):
+    """Store corpus in each worker's global state."""
+    global _TEXT_CORPUS
+    _TEXT_CORPUS = corpus
 
 
+def _generate_variant(args):
+    """Generate all images for one font variant. Designed for multiprocessing."""
+    font_path, font_name, variation_name, train_dir, test_dir, font_size, img_size, padding, no_clobber = args
 
-def build_dataset(font_dir, out_dir, chars, font_size, img_size, padding, no_clobber):
+    font = ImageFont.truetype(str(font_path), font_size, layout_engine=ImageFont.Layout.BASIC)
+    if variation_name is not None:
+        font.set_variation_by_name(variation_name)
+        variant_str = variation_name.decode("utf-8").replace(" ", "_")
+        full_name = f"{font_name}_{variant_str}"
+    else:
+        full_name = font_name
+
+    font_train_dir = pathlib.Path(train_dir) / full_name
+    font_test_dir = pathlib.Path(test_dir) / full_name
+    font_train_dir.mkdir(parents=True, exist_ok=True)
+    font_test_dir.mkdir(parents=True, exist_ok=True)
+
+    corpus = _TEXT_CORPUS
+
+    def generate_image(string, root):
+        safe_string = sanitize_filename(string)
+        target_file = root / f"{full_name}_{safe_string}.png"
+        if target_file.exists() and no_clobber:
+            return
+        img = render_and_crop(string, font, padding, img_size)
+        if img is not None:
+            img.save(target_file)
+
+    # Training set
+    for _ in range(500):
+        sentence = choose_sentence(corpus)
+        if sentence:
+            generate_image(sentence, font_train_dir)
+    for _ in range(25):
+        generate_image(f"{random.randint(1, 1000000)}", font_train_dir)
+    for _ in range(25):
+        generate_image(f"${random.randint(1, 1000000)}", font_train_dir)
+    for _ in range(25):
+        generate_image(f"{random.randint(0, 100)}%", font_train_dir)
+
+    # Test set
+    for _ in range(25):
+        sentence = choose_sentence(corpus)
+        if sentence:
+            generate_image(sentence, font_test_dir)
+    for _ in range(5):
+        generate_image(f"{random.randint(1, 1000000)}", font_test_dir)
+    for _ in range(5):
+        generate_image(f"${random.randint(1, 1000000)}", font_test_dir)
+    for _ in range(5):
+        generate_image(f"{random.randint(0, 100)}%", font_test_dir)
+
+    return full_name
+
+
+# ---------------------------------------------------------------------------
+# Main pipeline
+# ---------------------------------------------------------------------------
+
+def build_dataset(font_dir, out_dir, chars, font_size, img_size, padding, no_clobber, workers):
     font_dir, out_dir = pathlib.Path(font_dir), pathlib.Path(out_dir)
     train_dir, test_dir = out_dir / "train", out_dir / "test"
     train_dir.mkdir(parents=True, exist_ok=True)
     test_dir.mkdir(parents=True, exist_ok=True)
 
     font_paths = list(font_dir.rglob("*.ttf")) + list(font_dir.rglob("*.otf"))
-    font_paths = [font_path for font_path in font_paths if font_path.stem.split("[")[0].split("-")[0].lower() in [font.lower() for font in FONT_ALLOWLIST]]
+    allowlist_lower = [f.lower() for f in FONT_ALLOWLIST]
+    font_paths = [fp for fp in font_paths if fp.stem.split("[")[0].split("-")[0].lower() in allowlist_lower]
     if not font_paths:
         sys.exit(f"No font files found under {font_dir!s}")
 
-
-    missing_fonts = [font for font in FONT_ALLOWLIST if not any(font.lower() in font_path.stem.lower() for font_path in font_paths)]
-
+    missing_fonts = [f for f in FONT_ALLOWLIST if not any(f.lower() in fp.stem.lower() for fp in font_paths)]
     if missing_fonts:
-        raise ValueError(f"Not enough font files found under {font_dir!s}: {missing_fonts}")
+        raise ValueError(f"Missing fonts under {font_dir!s}: {missing_fonts}")
 
-    logger.info(f"Found {len(font_paths)} font files: {font_paths}")
+    # Preload text corpus
+    corpus = _load_text_corpus()
 
-    failed_fonts = []
-
-    progress_bar = tqdm(font_paths, unit="font")
-    for font_path in progress_bar:
-        # font_path.stem is something like "Roboto-Regular" or "Roboto-Regular[wdth,wght]", we clip out the [wdth,wght] part (OpenType “variation axes”)
+    # Enumerate all (font_path, variant) work items
+    work_items = []
+    for font_path in sorted(font_paths):
         font_family_name = font_path.stem.split("[")[0]
-        progress_bar.set_description(font_family_name)
-
         try:
-            font = ImageFont.truetype(str(font_path), font_size, layout_engine=ImageFont.Layout.BASIC)
-
-            def generate_all_images_for_font(font: ImageFont.FreeTypeFont, font_name: str):
-                def generate_image_for_string(string: str, font: ImageFont.FreeTypeFont, root: pathlib.Path):
-                    # Sanitize the string for use in filename
-                    safe_string = sanitize_filename(string)
-                    target_file = root / f"{font_name}_{safe_string}.png"
-                    if target_file.exists() and no_clobber:
-                        logger.info(f"Skipping {target_file} because it already exists")
-                        return
-                    img = render_and_crop(string, font, padding, img_size)
-                    if img is None:
-                        logger.warning(f"Failed to render {string} for {font_name}")
-                        return
-                    logger.info(f"Saving {target_file}")
-                    img.save(target_file)
-                    logger.info(f"Saved {target_file}")
-                    
-                font_train_dir = train_dir / font_name
-                font_test_dir = test_dir / font_name
-                font_train_dir.mkdir(exist_ok=True)
-                font_test_dir.mkdir(exist_ok=True)
-
-                ### Training set
-                ### Add random sentences from input_data
-                for _ in range(500):
-                    sentence = choose_sentence()
-                    if sentence:
-                        generate_image_for_string(sentence, font, font_train_dir)
-
-                ### Add random numbers
-                for _ in range(25):
-                    number = random.randint(1, 1000000)
-                    generate_image_for_string(f"{number}", font, font_train_dir)
-
-                ### Generate random dollar amounts
-                for _ in range(25):
-                    dollar_amount = random.randint(1, 1000000)
-                    generate_image_for_string(f"${dollar_amount}", font, font_train_dir)
-
-                ### Generate random percentage amounts
-                for _ in range(25):
-                    percentage = random.randint(0, 100)
-                    generate_image_for_string(f"{percentage}%", font, font_train_dir)
-
-                ### Test set
-                for _ in range(25):
-                    sentence = choose_sentence()
-                    if sentence:
-                        generate_image_for_string(sentence, font, font_test_dir)
-
-                ### Add random numbers
-                for _ in range(5):
-                    number = random.randint(1, 1000000)
-                    generate_image_for_string(f"{number}", font, font_test_dir)
-
-                ### Generate random dollar amounts
-                for _ in range(5):
-                    dollar_amount = random.randint(1, 1000000)
-                    generate_image_for_string(f"${dollar_amount}", font, font_test_dir)
-
-                ### Generate random percentage amounts
-                for _ in range(5):
-                    percentage = random.randint(0, 100)
-                    generate_image_for_string(f"{percentage}%", font, font_test_dir)
-
-            
             if font_is_variable(font_path):
-                font_variations = font.get_variation_names()
-                for variation in font_variations:
-                    font.set_variation_by_name(variation)
-                    variation_str = variation.decode("utf-8").replace(" ", "_")
-                    generate_all_images_for_font(font, f"{font_family_name}_{variation_str}")
+                font = ImageFont.truetype(str(font_path), font_size, layout_engine=ImageFont.Layout.BASIC)
+                for variation in font.get_variation_names():
+                    work_items.append((
+                        font_path, font_family_name, variation,
+                        str(train_dir), str(test_dir),
+                        font_size, img_size, padding, no_clobber,
+                    ))
             else:
-                generate_all_images_for_font(font, font_family_name)
-
-
+                work_items.append((
+                    font_path, font_family_name, None,
+                    str(train_dir), str(test_dir),
+                    font_size, img_size, padding, no_clobber,
+                ))
         except Exception as e:
-            import traceback
-            logger.error(f"Failed to process font {font_path.name}:")
-            logger.error(f"  Error: {e}")
-            logger.error(f"  Traceback:\n{traceback.format_exc()}")
-            failed_fonts.append((font_path, str(e)))
-            continue
+            logger.error(f"Failed to enumerate variants for {font_path.name}: {e}")
 
-    
-    if failed_fonts:
-        logger.warning(f"Failed to process {len(failed_fonts)} fonts:")
-        for font_path, error in failed_fonts:
-            logger.warning(f"  {font_path.name}: {error}")
+    print(f"Generating images for {len(work_items)} font variants using {workers} workers ...")
+
+    with multiprocessing.Pool(workers, initializer=_worker_init, initargs=(corpus,)) as pool:
+        for name in tqdm(
+            pool.imap_unordered(_generate_variant, work_items),
+            total=len(work_items),
+            unit="variant",
+        ):
+            pass
+
+    # --- Post-generation validation ---
+    train_variants = sorted(d for d in os.listdir(train_dir) if os.path.isdir(train_dir / d))
+    test_variants = sorted(d for d in os.listdir(test_dir) if os.path.isdir(test_dir / d))
+
+    train_total = sum(
+        len([f for f in os.listdir(train_dir / v) if f.endswith(".png")])
+        for v in train_variants
+    )
+    test_total = sum(
+        len([f for f in os.listdir(test_dir / v) if f.endswith(".png")])
+        for v in test_variants
+    )
+
+    print(f"\n--- Generation summary ---")
+    print(f"  Output:          {out_dir}")
+    print(f"  Train variants:  {len(train_variants)}")
+    print(f"  Test variants:   {len(test_variants)}")
+    print(f"  Train images:    {train_total} ({train_total / max(len(train_variants), 1):.0f} per variant)")
+    print(f"  Test images:     {test_total} ({test_total / max(len(test_variants), 1):.0f} per variant)")
+
+    if set(train_variants) != set(test_variants):
+        missing_test = set(train_variants) - set(test_variants)
+        missing_train = set(test_variants) - set(train_variants)
+        if missing_test:
+            print(f"  WARNING: {len(missing_test)} variants in train but not test: {sorted(missing_test)[:5]}")
+        if missing_train:
+            print(f"  WARNING: {len(missing_train)} variants in test but not train: {sorted(missing_train)[:5]}")
+
+    # Check for empty variant dirs
+    empty_train = [v for v in train_variants if len(os.listdir(train_dir / v)) == 0]
+    empty_test = [v for v in test_variants if len(os.listdir(test_dir / v)) == 0]
+    if empty_train:
+        print(f"  WARNING: {len(empty_train)} empty train dirs: {empty_train[:5]}")
+    if empty_test:
+        print(f"  WARNING: {len(empty_test)} empty test dirs: {empty_test[:5]}")
+
+    print(f"Done.")
+
 
 def cli():
-    ap = argparse.ArgumentParser(description="Crop glyphs for DINO v2 fine‑tuning")
+    ap = argparse.ArgumentParser(description="Crop glyphs for DINO v2 fine‑tuning")
     ap.add_argument("--font_dir",  required=True, help="Directory with TTF/OTF files")
     ap.add_argument("--out_dir",   default="glyphs224", help="Destination root folder")
     ap.add_argument("--chars",     default="ascii",
@@ -408,10 +399,14 @@ def cli():
                     help="Font size used for initial rendering")
     ap.add_argument("--padding",   type=int, default=50, help="Pixels of padding before crop")
     ap.add_argument("--no-clobber", action="store_true", help="Skip existing files, useful for rerunning when there are errors.")
+    ap.add_argument("--workers",   type=int, default=None,
+                    help="Number of parallel workers (default: number of CPU cores)")
     ap.add_argument("--verbose",   action="store_true", help="Verbose output")
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING)
+
+    workers = args.workers or os.cpu_count() or 1
 
     build_dataset(
         font_dir    = args.font_dir,
@@ -421,6 +416,7 @@ def cli():
         img_size    = args.img_size,
         padding     = args.padding,
         no_clobber  = args.no_clobber,
+        workers     = workers,
     )
 
 if __name__ == "__main__":

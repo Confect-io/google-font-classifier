@@ -531,6 +531,29 @@ def main():
     model, transform = load_model(args.model)
     model.to(device)
 
+    # --- Sanity check: verify test labels match model labels ---
+    model_labels = set(model.config.id2label.values())
+    dir_labels_set = set(
+        d for d in os.listdir(test_dir) if os.path.isdir(os.path.join(test_dir, d))
+    )
+    only_in_test = dir_labels_set - model_labels
+    only_in_model = model_labels - dir_labels_set
+    overlap = dir_labels_set & model_labels
+
+    print(f"\nLabel check: {len(dir_labels_set)} test classes, {len(model_labels)} model classes, {len(overlap)} overlap")
+    if only_in_test:
+        print(f"  WARNING: {len(only_in_test)} test classes NOT in model: {sorted(only_in_test)[:5]}{'...' if len(only_in_test) > 5 else ''}")
+    if only_in_model:
+        print(f"  WARNING: {len(only_in_model)} model classes NOT in test: {sorted(only_in_model)[:5]}{'...' if len(only_in_model) > 5 else ''}")
+
+    if len(overlap) < len(dir_labels_set) * 0.5:
+        raise ValueError(
+            f"Model/dataset mismatch: only {len(overlap)}/{len(dir_labels_set)} test classes "
+            f"exist in the model's label space. This will produce meaningless accuracy numbers. "
+            f"Use a model that was trained on this dataset."
+        )
+    print()
+
     print("Evaluating ...")
     y_true, y_pred, bad_images, dir_labels, embeddings = evaluate(
         model, transform, test_dir, args.batch_size, device,
