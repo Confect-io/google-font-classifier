@@ -278,15 +278,17 @@ def _generate_variant(args):
     font_test_dir.mkdir(parents=True, exist_ok=True)
 
     corpus = _TEXT_CORPUS
+    _counter = [0]  # mutable so nested function can increment
 
     def generate_image(string, root):
-        safe_string = sanitize_filename(string)
-        target_file = root / f"{full_name}_{safe_string}.png"
-        if target_file.exists() and no_clobber:
-            return
         img = render_and_crop(string, font, padding, img_size)
         if img is not None:
+            target_file = root / f"{_counter[0]}.png"
+            if target_file.exists() and no_clobber:
+                _counter[0] += 1
+                return
             img.save(target_file, compress_level=1)
+            _counter[0] += 1
 
     # Training set
     for _ in range(500):
