@@ -2,3 +2,18 @@
 .DS_Store
 .vscode
 __pycache__
+
+# LaTeX build artifacts
+*.aux
+*.log
+*.out
+*.pdf
+
+# Build outputs
+*.tar.gz
+bad_images.json
+confusion_matrix.json
+
+# Virtual environments
+myEnv/
+.venv/
