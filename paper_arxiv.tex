@@ -91,7 +91,7 @@ Full fine-tuning of large pre-trained models is computationally expensive and ri
 
 \subsection{Font Selection}
 
-We source fonts from the Google Fonts open-source repository.\footnote{\url{https://github.com/google/fonts}} From the full catalog, we select a curated set of 31 base font families spanning diverse typographic categories: sans-serif (e.g., Inter, Roboto, Poppins, DM Sans), serif (e.g., Crimson Pro, Playfair Display, Merriweather), monospace (JetBrains Mono), and display faces (e.g., Ultra, Big Shoulders Text). Selection was guided by three criteria: (1)~\emph{prevalence in modern design tooling}---we prioritized fonts frequently used in Figma, Dribbble, and similar platforms for website and mobile design; (2)~\emph{visual distinctiveness}---we excluded near-duplicate families that differ only in minor metrics to keep classes well-separated; and (3)~\emph{representativeness of high-quality digital design}---the set reflects the typographic choices typical of professional web and mobile interfaces. Many of these families include variable font axes (primarily weight), and we enumerate each axis variation as a separate class. This produces a total of 394 distinct font variants for classification.
+We source fonts from the Google Fonts open-source repository.\footnote{\url{https://github.com/google/fonts}} From the full catalog, we select a curated set of 32 base font families spanning diverse typographic categories: sans-serif (e.g., Inter, Roboto, Poppins, DM Sans), serif (e.g., Crimson Pro, Playfair Display, Merriweather), monospace (JetBrains Mono), and display faces (e.g., Ultra, Big Shoulders Text). Selection was guided by three criteria: (1)~\emph{prevalence in modern design tooling}---we prioritized fonts frequently used in Figma, Dribbble, and similar platforms for website and mobile design; (2)~\emph{visual distinctiveness}---we excluded near-duplicate families that differ only in minor metrics to keep classes well-separated; and (3)~\emph{representativeness of high-quality digital design}---the set reflects the typographic choices typical of professional web and mobile interfaces. Many of these families include variable font axes (primarily weight), and we enumerate each axis variation as a separate class. This produces a total of 394 distinct font variants for classification.
 
 \subsubsection{Iterative Font Curation}
 
@@ -104,7 +104,7 @@ The final font set is the result of four iterations of the model and dataset, ea
 
     \item \textbf{v3} (20 families, 300 variants, 59\% accuracy).\footnote{\url{https://huggingface.co/dchen0/font-classifier-v3}} Scaled back from v2 by removing duplicate-like families, but the training dataset was too small (approximately 9,400 images) relative to the label count, and several included families still overlapped visually. Accuracy dropped significantly.
 
-    \item \textbf{v4} (31 families, 394 variants, 86\% accuracy).\footnote{\url{https://huggingface.co/dchen0/font_classifier_v4}} The current version. The font set was rebuilt from scratch using the three selection criteria described above. The training dataset was scaled up substantially (approximately 575 images per variant). A critical engineering fix---embedding preprocessing into the model's \texttt{forward} method---eliminated train-serve skew that had silently hurt earlier versions.
+    \item \textbf{v4} (32 families, 394 variants, 86\% accuracy).\footnote{\url{https://huggingface.co/dchen0/font_classifier_v4}} The current version. The font set was rebuilt from scratch using the three selection criteria described above. The training dataset was scaled up substantially (approximately 575 images per variant). A critical engineering fix---embedding preprocessing into the model's \texttt{forward} method---eliminated train-serve skew that had silently hurt earlier versions.
 \end{itemize}
 
 Each dataset is publicly available on HuggingFace.\footnote{\url{https://huggingface.co/datasets/dchen0/font_crops}}\textsuperscript{,}\footnote{\url{https://huggingface.co/datasets/dchen0/font_crops_v4}}
@@ -116,7 +116,7 @@ We generate training images by rendering text strings in each font variant onto 
 \begin{enumerate}[leftmargin=*]
     \item \textbf{Text selection.} For each font variant, we render 500 random sentences drawn from literary source texts, plus 25 random numbers, 25 dollar amounts, and 25 percentage values. Test images use 25 sentences, 5 numbers, 5 dollar amounts, and 5 percentage values per class.
 
-    \item \textbf{Rendering.} Text is rendered at 1024px font size onto a canvas with padding on all sides (default 50px) using the Pillow library. The canvas is then cropped to the tight bounding box of the rendered glyphs (i.e., all empty space beyond the ink is removed). The cropped glyph image is resized so that its height equals 224 pixels, with the width scaled proportionally to preserve the aspect ratio, using Lanczos resampling.
+    \item \textbf{Rendering.} Text is rendered at 1024px font size onto a canvas with padding on all sides (128px) using the Pillow library. The canvas is then cropped to the tight bounding box of the rendered glyphs (i.e., all empty space beyond the ink is removed). The cropped glyph image is resized so that its height equals 224 pixels, with the width scaled proportionally to preserve the aspect ratio, using Lanczos resampling.
 
     \item \textbf{Color augmentation.} Background and text colors are randomly sampled as RGB tuples. To ensure legibility, we require that their perceived luminance values differ by at least 80 on a 0--255 scale, where luminance is computed as $L = 0.299R + 0.587G + 0.114B$ (the ITU-R BT.601 formula). If the randomly drawn pair fails this contrast check, a new pair is sampled until the constraint is satisfied.
 
@@ -261,7 +261,7 @@ We compute a full confusion matrix across all classes to analyze per-class perfo
 \begin{figure}[t]
     \centering
     \includegraphics[width=0.85\textwidth]{figures/font_dendrogram.pdf}
-    \caption{Hierarchical clustering (UPGMA) of 31 font families by cosine distance
+    \caption{Hierarchical clustering (UPGMA) of 32 font families by cosine distance
     between mean \texttt{[CLS]} embeddings. The model's learned representations recover
     typographic structure: serif, sans-serif, monospace, and display families
     occupy distinct branches.}
@@ -332,7 +332,7 @@ The model supports three deployment modes:
 
 \paragraph{Limitations.} The model is trained exclusively on synthetically rendered text and may not generalize perfectly to photographs of printed text, handwritten annotations overlaid on typed text, or heavily stylized graphics. The current system classifies images at the font level but does not localize text regions---it assumes the input is a cropped text region. Performance degrades on font weight variants that are visually near-identical at low resolution.
 
-\paragraph{Future work.} Natural extensions include: (1) training on a broader set of fonts beyond the current 31 families, (2) incorporating real-world training images via domain adaptation, (3) jointly predicting font family and attributes (weight, width, style) in a multi-task framework, and (4) integrating text detection to enable end-to-end font recognition from uncropped images.
+\paragraph{Future work.} Natural extensions include: (1) training on a broader set of fonts beyond the current 32 families, (2) incorporating real-world training images via domain adaptation, (3) jointly predicting font family and attributes (weight, width, style) in a multi-task framework, and (4) integrating text detection to enable end-to-end font recognition from uncropped images.
 
 % ---- 9. Conclusion ----
 \section{Conclusion}

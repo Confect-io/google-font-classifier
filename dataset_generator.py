@@ -8,6 +8,8 @@ import pathlib
 import random
 import sys
 
+import numpy as np
+
 from fontTools.ttLib import TTFont
 from PIL import Image, ImageDraw, ImageFont
 from tqdm import tqdm
@@ -223,33 +225,14 @@ def render_and_crop(text: str, font: ImageFont.FreeTypeFont,
     # Resize maintaining aspect ratio
     resized_glyph = glyph.resize((target_width, target_height), Image.Resampling.LANCZOS)
     
-    # Add gaussian noise using PIL's load/putpixel methods
-    def add_gaussian_noise_pil(img, noise_factor=0.1):
-        noise_std = noise_factor * 255
-        
-        # Create a copy to modify
-        noisy_img = img.copy()
-        pixels = noisy_img.load()
-        
-        width, height = img.size
-        
-        for x in range(width):
-            for y in range(height):
-                pixel = pixels[x, y]
-                
-                if isinstance(pixel, tuple):  # RGB image
-                    noisy_pixel = tuple(
-                        max(0, min(255, int(p + random.gauss(0, noise_std))))
-                        for p in pixel
-                    )
-                else:  # Grayscale image
-                    noisy_pixel = max(0, min(255, int(pixel + random.gauss(0, noise_std))))
-                
-                pixels[x, y] = noisy_pixel
-        
-        return noisy_img
-    
-    return add_gaussian_noise_pil(resized_glyph)
+    # Add gaussian noise using numpy (vectorized)
+    def add_gaussian_noise(img, noise_factor=0.1):
+        arr = np.array(img, dtype=np.float32)
+        noise = np.random.normal(0, noise_factor * 255, arr.shape).astype(np.float32)
+        arr = np.clip(arr + noise, 0, 255).astype(np.uint8)
+        return Image.fromarray(arr)
+
+    return add_gaussian_noise(resized_glyph)
 
 
 def choose_sentence():
