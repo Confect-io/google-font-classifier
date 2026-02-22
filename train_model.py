@@ -6,13 +6,11 @@ import shutil
 import tempfile
 from pathlib import Path
 
-import numpy as np
 import torch
 import torchvision.transforms as T
 from datasets import load_dataset
 from huggingface_hub import HfApi
 from peft import LoraConfig, PeftModel, get_peft_model
-from PIL import Image
 from safetensors import safe_open
 from transformers import (
     AutoImageProcessor,
@@ -130,7 +128,7 @@ def load_checkpoint_with_size_mismatch_handling(base_model, checkpoint_path, pef
 def get_transform(processor: AutoImageProcessor, size: int):
     aug = get_inference_transform(processor, size)
 
-    def transform(example, train=True):
+    def transform(example):
         # Apply the same pad-to-square + resize + normalize pipeline used at inference
         # (defined in handler.py) to ensure no train/serve skew.
         example["pixel_values"] = aug(example["image"])
@@ -192,12 +190,12 @@ if __name__ == "__main__":
 
         logger.info("Applying data transformations")
         train_dataset = dataset["train"].map(
-            lambda x: transform(x, train=True),
+            transform,
             remove_columns=["image"],
             desc="Transforming training data"
         )
         test_dataset = dataset["test"].map(
-            lambda x: transform(x, train=False),
+            transform,
             remove_columns=["image"],
             desc="Transforming test data"
         )

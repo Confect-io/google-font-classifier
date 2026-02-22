@@ -15,8 +15,8 @@ if __name__ == "__main__":
     
     hf_model_name = sys.argv[1]
     image_path = sys.argv[2]
-    
-        # Regular model loading from HuggingFace
+
+    # Regular model loading from HuggingFace
     model = Dinov2ForImageClassification.from_pretrained(
         hf_model_name,
         ignore_mismatched_sizes=True,

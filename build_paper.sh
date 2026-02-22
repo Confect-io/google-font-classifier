@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-PDFLATEX=/Library/TeX/texbin/pdflatex
+PDFLATEX="${PDFLATEX:-$(command -v pdflatex || echo /Library/TeX/texbin/pdflatex)}"
 VENV_DIR=.venv
 SKIP_MATRIX=false
 FORMAT=both

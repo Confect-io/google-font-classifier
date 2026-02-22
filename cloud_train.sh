@@ -11,7 +11,6 @@
 # Requirements:
 #   - NVIDIA GPU with CUDA
 #   - Python 3.10+
-#   - HUGGINGFACE_API_KEY env var (for uploading results)
 # -----------------------------------------------------------------------
 set -e
 
@@ -120,7 +119,7 @@ case "$MODE" in
         ;;
     all)
         # Run linear probe first (fastest to converge)
-        run_training "linear_probe" "--linear_probe --epochs 20"
+        run_training "linear_probe" "--linear_probe"
         run_training "resnet50" "--resnet_baseline"
         run_training "lora_r4" "--lora_rank 4 --lora_alpha 8"
         run_training "lora_r8" ""

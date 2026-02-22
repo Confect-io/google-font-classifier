@@ -241,7 +241,7 @@ def plot_tsne_embeddings(y_true, embeddings, output_path):
     tsne = TSNE(n_components=2, perplexity=30, random_state=42)
     coords = tsne.fit_transform(embeddings)
 
-    # Combine tab20 + tab20b to get 40 distinct colors (we have 31 families)
+    # Combine tab20 + tab20b to get 40 distinct colors (we have 32 families)
     tab20 = plt.cm.get_cmap("tab20")
     tab20b = plt.cm.get_cmap("tab20b")
     cmap = lambda i: tab20(i) if i < 20 else tab20b(i - 20)

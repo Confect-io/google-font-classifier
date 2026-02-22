@@ -156,7 +156,7 @@ A critical design decision is ensuring identical preprocessing at training and i
     \item Convert to tensor and normalize using ImageNet statistics (mean $= [0.485, 0.456, 0.406]$, std $= [0.229, 0.224, 0.225]$).
 \end{enumerate}
 
-To eliminate preprocessing discrepancies, we implement a custom \texttt{FontClassifierWithPreprocessing} class that overrides the model's \texttt{forward} method to apply preprocessing within the model itself. This ensures that any deployment path---HuggingFace pipeline, inference endpoint, or direct model call---applies identical transformations.
+To eliminate preprocessing discrepancies, we define a shared transform pipeline (\texttt{get\_inference\_transform} in \texttt{handler.py}) that is applied before every model call. The \texttt{EndpointHandler} class used for HuggingFace Inference Endpoints applies this same pipeline, ensuring that any deployment path---inference endpoint, batch evaluation, or direct model call---uses identical transformations.
 
 % ---- 5. Training ----
 \section{Experimental Setup}

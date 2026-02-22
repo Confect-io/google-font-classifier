@@ -21,14 +21,6 @@ Image.MAX_IMAGE_PIXELS = None
 
 logger = logging.getLogger(__name__)
 
-ASCII_CHARS = (
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    "abcdefghijklmnopqrstuvwxyz"
-    "0123456789"
-    "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
-    " \n\t"
-)
-
 FONT_ALLOWLIST = [
 "BigShouldersText",
 "BricolageGrotesque",
@@ -105,13 +97,6 @@ def choose_sentence(corpus):
 
 def font_is_variable(font_path: pathlib.Path) -> bool:
     return "fvar" in TTFont(str(font_path))
-
-def char_set(name: str) -> str:
-    if name == "ascii":
-        return ASCII_CHARS
-    if name == "letters":
-        return ASCII_CHARS[:52] + " \n\t"
-    return name
 
 def sanitize_filename(text: str) -> str:
     """Sanitize a string to be safe for use in filenames."""
@@ -321,7 +306,7 @@ def _generate_variant(args):
 # Main pipeline
 # ---------------------------------------------------------------------------
 
-def build_dataset(font_dir, out_dir, chars, font_size, img_size, padding, no_clobber, workers):
+def build_dataset(font_dir, out_dir, font_size, img_size, padding, no_clobber, workers):
     font_dir, out_dir = pathlib.Path(font_dir), pathlib.Path(out_dir)
     train_dir, test_dir = out_dir / "train", out_dir / "test"
     train_dir.mkdir(parents=True, exist_ok=True)
@@ -428,8 +413,6 @@ def cli():
     ap = argparse.ArgumentParser(description="Crop glyphs for DINO v2 fine‑tuning")
     ap.add_argument("--font_dir",  required=True, help="Directory with TTF/OTF files")
     ap.add_argument("--out_dir",   default="glyphs224", help="Destination root folder")
-    ap.add_argument("--chars",     default="ascii",
-                    help="'ascii', 'letters', or a literal string of chars")
     ap.add_argument("--img_size",  type=int, default=224, help="Final square size (px)")
     ap.add_argument("--font_size", type=int, default=48,
                     help="Font size used for initial rendering")
@@ -447,7 +430,6 @@ def cli():
     build_dataset(
         font_dir    = args.font_dir,
         out_dir     = args.out_dir,
-        chars       = char_set(args.chars),
         font_size   = args.font_size,
         img_size    = args.img_size,
         padding     = args.padding,
