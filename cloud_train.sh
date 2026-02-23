@@ -49,7 +49,7 @@ echo "============================================"
 
 # --- 1. Install dependencies ---
 echo "==> Installing dependencies"
-pip install -q torch torchvision transformers datasets peft accelerate \
+pip3 install -q torch torchvision transformers datasets peft accelerate \
     safetensors huggingface_hub pillow numpy scikit-learn tensorboard
 
 # --- 2. Clone the repo ---
