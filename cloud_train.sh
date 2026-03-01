@@ -47,9 +47,14 @@ echo "  Epochs:     $EPOCHS"
 echo "  LR:         $LR"
 echo "============================================"
 
-# --- 1. Install dependencies ---
+# --- 1. Set up venv and install dependencies ---
+if [ ! -d ".venv" ]; then
+    echo "==> Creating venv"
+    python3 -m venv .venv
+fi
+source .venv/bin/activate
 echo "==> Installing dependencies"
-pip3 install -q torch torchvision transformers datasets peft accelerate \
+pip install -q torch torchvision transformers datasets peft accelerate \
     safetensors huggingface_hub pillow numpy scikit-learn tensorboard
 
 # --- 2. Clone the repo ---
