@@ -220,6 +220,13 @@ if ! python3 -c "import torch; assert torch.cuda.is_available(), 'No CUDA'" 2>/d
 fi
 echo "==> CUDA OK ($(python3 -c 'import torch; print(f"torch {torch.__version__}, CUDA {torch.version.cuda}, {torch.cuda.get_device_name(0)}")' 2>/dev/null))"
 
+# System diagnostics
+echo "==> System info:"
+echo "  GPU: $(nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader 2>/dev/null | head -1)"
+echo "  RAM: $(free -h 2>/dev/null | awk '/Mem:/{print $2}' || echo '?')"
+echo "  CPU: $(nproc) cores"
+echo "  Disk: $(df -h /workspace 2>/dev/null | tail -1 | awk '{print $2, "total,", $4, "free"}')"
+
 echo "==> Cloning font-model repo"
 cd /workspace
 if [ ! -d "font-model" ]; then
