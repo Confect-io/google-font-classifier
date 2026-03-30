@@ -158,7 +158,30 @@ echo "============================================"
 REMOTE_SCRIPT=$(cat <<'TRAINING_SCRIPT'
 #!/bin/bash
 set -eo pipefail
-trap 'echo "SCRIPT CRASHED at line $LINENO (exit code $?)"' ERR
+
+# Always upload the training log to HF before exit (even on crash)
+upload_log() {
+    echo "==> Uploading training log to HuggingFace..."
+    python3 -c "
+from huggingface_hub import HfApi
+import os, datetime
+api = HfApi(token='__HF_TOKEN__')
+api.create_repo('__HF_RESULTS__', repo_type='model', exist_ok=True)
+log_path = '/workspace/training.log'
+if os.path.exists(log_path):
+    ts = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    api.upload_file(
+        path_or_fileobj=log_path,
+        path_in_repo=f'logs/__MODE___{ts}.log',
+        repo_id='__HF_RESULTS__',
+        repo_type='model',
+    )
+    print(f'Log uploaded as logs/__MODE___{ts}.log')
+else:
+    print('No training log found')
+" 2>/dev/null || echo "==> Log upload failed (non-critical)"
+}
+trap 'echo "SCRIPT CRASHED at line $LINENO (exit code $?)"; upload_log' ERR
 
 HF_DATASET="__HF_DATASET__"
 MODE="__MODE__"
@@ -320,6 +343,9 @@ print('Upload complete.')
 else
     echo "==> No results to upload (all runs failed or no output produced)"
 fi
+
+# Upload training log (always, even if training failed)
+upload_log
 
 # Self-destruct: destroy this instance via Vast.ai API
 echo "==> Auto-destroying instance __INSTANCE_ID__..."
