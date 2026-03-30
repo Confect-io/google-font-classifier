@@ -112,7 +112,16 @@ python serve_model.py <model name or path> <image path>
 
 ## Cloud Training
 
-For GPU training on cloud instances (Vast.ai, RunPod, etc.):
+Runs training end-to-end on a Vast.ai GPU instance: finds a machine, uploads the code, trains, downloads results, and destroys the instance automatically.
+
+**Setup:**
+
+```bash
+pip install vastai
+vastai set api-key <your key>
+```
+
+**Usage:**
 
 ```bash
 # Run all baselines (linear probe, ResNet-50, LoRA r=4/8/16, full FT)
@@ -123,6 +132,8 @@ bash cloud_train.sh --hf_dataset dchen0/font_crops_v5 --mode lora
 bash cloud_train.sh --hf_dataset dchen0/font_crops_v5 --mode full
 bash cloud_train.sh --hf_dataset dchen0/font_crops_v5 --mode resnet
 ```
+
+Options: `--gpu` (default RTX_4090), `--max_price` (default $2/hr), `--batch_size`, `--epochs`, `--output` (default ./cloud_results).
 
 ## Evaluation
 
