@@ -13,7 +13,8 @@ set -e
 
 HF_DATASET=""
 HF_RESULTS=""
-MODE="lora"
+MODE=""
+MODE_SET=false
 BATCH_SIZE=64
 EPOCHS=100
 LR=1e-4
@@ -31,7 +32,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --hf_dataset)   HF_DATASET="$2"; shift 2 ;;
         --hf_results)   HF_RESULTS="$2"; shift 2 ;;
-        --mode)         MODE="$2"; shift 2 ;;
+        --mode)         MODE="$2"; MODE_SET=true; shift 2 ;;
         --batch_size)   BATCH_SIZE="$2"; shift 2 ;;
         --epochs)       EPOCHS="$2"; shift 2 ;;
         --lr)           LR="$2"; shift 2 ;;
@@ -52,7 +53,16 @@ if [ "$DRY_RUN" = "true" ]; then
     HF_RESULTS="${HF_RESULTS:-dchen0/font-model-dry-run}"
     EPOCHS=1
     DISK_GB=50
-    echo "*** DRY RUN MODE — using test dataset, 1 epoch ***"
+    # Default to all modes unless a specific mode was explicitly requested
+    if [ "$MODE_SET" = "false" ]; then
+        MODE="all"
+    fi
+    echo "*** DRY RUN MODE — using test dataset, 1 epoch, mode=$MODE ***"
+fi
+
+# Default mode if not set
+if [ -z "$MODE" ]; then
+    MODE="lora"
 fi
 
 if [ -z "$HF_DATASET" ] || [ -z "$HF_RESULTS" ]; then

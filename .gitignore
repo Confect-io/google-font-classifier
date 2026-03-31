@@ -17,3 +17,8 @@ confusion_matrix.json
 # Virtual environments
 myEnv/
 .venv/
+
+# Cloud training artifacts
+test_dataset_dry_run/
+cloud_results/
+cloud_train_*.log
