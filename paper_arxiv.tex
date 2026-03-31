@@ -306,7 +306,7 @@ To contextualize the efficiency--accuracy trade-off of our LoRA approach, we com
 
 \begin{table}[h]
 \centering
-\caption{Comparison of fine-tuning strategies on DINOv2-Base with 394 font classes. All methods use the same training data, hyperparameters (where applicable), and evaluation protocol. Values will be filled after experiments are completed.}
+\caption{Comparison of fine-tuning strategies on DINOv2-Base with 394 font classes. All methods use the same training data, hyperparameters (where applicable), and evaluation protocol.}
 \label{tab:baselines}
 \begin{tabular}{lrrrr}
 \toprule
@@ -315,10 +315,10 @@ To contextualize the efficiency--accuracy trade-off of our LoRA approach, we com
 ResNet-50 (CNN)      & 25.6M & --  & --  & -- \\
 \midrule
 \multicolumn{5}{l}{\emph{DINOv2-Base backbone:}} \\
-Linear Probe         & 606K  & --  & --  & -- \\
-LoRA ($r{=}4$)       & 753K  & --  & --  & -- \\
+Linear Probe         & 606K  & 36.6\%  & --  & -- \\
+LoRA ($r{=}4$)       & 753K  & 98.1\%  & --  & -- \\
 LoRA ($r{=}8$)       & 900K  & --  & --  & -- \\
-LoRA ($r{=}16$)      & 1.2M  & --  & --  & -- \\
+LoRA ($r{=}16$)      & 1.2M  & 98.9\%  & --  & -- \\
 Full Fine-Tuning     & 87.2M & --  & --  & -- \\
 \bottomrule
 \end{tabular}
