@@ -245,10 +245,16 @@ fi
 cd font-model
 
 echo "==> Downloading dataset from HuggingFace: $HF_DATASET"
-python3 -c "
+for _dl_try in 1 2 3 4 5; do
+    if python3 -c "
 from huggingface_hub import snapshot_download
 snapshot_download(repo_id='${HF_DATASET}', repo_type='dataset', local_dir='data', token='__HF_TOKEN__')
-"
+"; then
+        break
+    fi
+    echo "  Download failed (attempt $_dl_try/5), retrying in 30s..."
+    sleep 30
+done
 
 # Extract tar files
 for tarfile in data/train*.tar data/test*.tar; do
