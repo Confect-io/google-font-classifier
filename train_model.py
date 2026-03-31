@@ -228,7 +228,7 @@ if __name__ == "__main__":
                 loss = None
                 if labels is not None:
                     loss = torch.nn.functional.cross_entropy(logits, labels)
-                return type('Output', (), {'loss': loss, 'logits': logits})()
+                return {"loss": loss, "logits": logits}
 
         id2label = {i: name for i, name in enumerate(label_names)}
         model = ResNetForImageClassification(resnet, id2label)
