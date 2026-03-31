@@ -256,7 +256,7 @@ snapshot_download(repo_id='${HF_DATASET}', repo_type='dataset', local_dir='data'
     sleep 30
 done
 
-# Extract tar files
+# Extract tar files and clean macOS resource fork files
 for tarfile in data/train*.tar data/test*.tar; do
     if [ -f "$tarfile" ]; then
         echo "==> Extracting $tarfile..."
@@ -264,6 +264,7 @@ for tarfile in data/train*.tar data/test*.tar; do
         rm "$tarfile"
     fi
 done
+find data/ -name '._*' -delete 2>/dev/null || true
 
 # Clean up HF cache to free disk space
 rm -rf /root/.cache/huggingface/hub 2>/dev/null || true
