@@ -49,7 +49,7 @@
 
 % ---- Abstract ----
 \begin{abstract}
-We present a font classification system capable of identifying 394 font variants across 32 families from rendered text images. Our approach fine-tunes a DINOv2 Vision Transformer using Low-Rank Adaptation (LoRA), achieving approximately 86\% top-1 accuracy while training roughly 1\% of the model's 87.2M parameters. We introduce a synthetic dataset generation pipeline that renders Google Fonts at scale with diverse augmentations including randomized colors, alignment, line wrapping, and Gaussian noise, producing training images that generalize to real-world typographic samples. The model incorporates built-in preprocessing to ensure consistency between training and inference, and is deployed as a HuggingFace Inference Endpoint. We release the model, dataset, and full training pipeline as open-source resources.
+We present a font classification system capable of identifying 394 font variants across 32 families from rendered text images. Our approach fine-tunes a DINOv2 Vision Transformer using Low-Rank Adaptation (LoRA), achieving 98.9\% top-1 accuracy while training roughly 1\% of the model's 87.2M parameters. We introduce a synthetic dataset generation pipeline that renders Google Fonts at scale with diverse augmentations including randomized colors, alignment, line wrapping, and Gaussian noise, producing training images that generalize to real-world typographic samples. The model incorporates built-in preprocessing to ensure consistency between training and inference, and is deployed as a HuggingFace Inference Endpoint. We release the model, dataset, and full training pipeline as open-source resources.
 \end{abstract}
 
 % ---- 1. Introduction ----
@@ -63,12 +63,12 @@ In this work, we take advantage of recent advances in self-supervised visual rep
 
 Our contributions are as follows:
 \begin{enumerate}[leftmargin=*]
-    \item A parameter-efficient fine-tuning approach for font classification that adapts DINOv2 with LoRA, achieving 86\% top-1 accuracy across 394 font classes.
+    \item A parameter-efficient fine-tuning approach for font classification that adapts DINOv2 with LoRA, achieving 98.9\% top-1 accuracy across 394 font classes.
     \item A scalable synthetic dataset generation pipeline that renders Google Fonts with diverse augmentations to produce training data robust to visual variation.
     \item An end-to-end system with built-in preprocessing that ensures consistency between training and deployment, released as an open-source model and dataset on HuggingFace.
 \end{enumerate}
 
-This model serves as a component of Anything,\footnote{\url{https://anything.com}} which achieved the \#1 ranking on Design Arena's builders leaderboard,\footnote{\url{https://www.designarena.ai/leaderboard/builder}} a crowdsourced benchmark for AI-generated design with over 150{,}000 voters.
+This model is deployed as a component of a production design tool.\footnote{\url{https://anything.com}}
 
 % ---- 2. Related Work ----
 \section{Related Work}
@@ -176,7 +176,7 @@ We train using the HuggingFace \texttt{Trainer} with the following hyperparamete
 Optimizer & AdamW \\
 Learning rate & $1 \times 10^{-4}$ \\
 Weight decay & 0.05 \\
-Batch size & 32 \\
+Batch size & 64 \\
 Epochs & 100 \\
 LR scheduler & Linear decay (Trainer default) \\
 Evaluation frequency & Every 500 steps \\
@@ -190,14 +190,14 @@ A checkpoint (a full snapshot of the model weights, optimizer state, and trainin
 
 \subsection{Infrastructure}
 
-Training is conducted using PyTorch with HuggingFace Transformers and the PEFT library for LoRA integration. The training script automatically selects the best available hardware accelerator at runtime. Mixed-precision training (FP16) is enabled on CUDA devices to reduce memory usage and training time.
+Training is conducted using PyTorch with HuggingFace Transformers and the PEFT library for LoRA integration on Vast.ai cloud GPU instances equipped with NVIDIA RTX 3090 GPUs (24\,GB VRAM). Mixed-precision training (FP16) is enabled to reduce memory usage and training time. With the LoRA $r{=}8$ configuration and a batch size of 64, each epoch takes approximately 20 minutes; total training time for 100 epochs is approximately 33 hours per configuration.
 
 % ---- 6. Results ----
 \section{Results}
 
 \subsection{Classification Accuracy}
 
-The fine-tuned model achieves approximately \textbf{86\% top-1 accuracy} on the held-out test set across 394 font classes. Given the fine-grained nature of the task---many classes differ only in weight (e.g., Roboto-300 vs.\ Roboto-400) or subtle stylistic features---this represents strong performance.
+The best-performing configuration (LoRA $r{=}16$) achieves \textbf{98.9\% top-1 accuracy} on the held-out test set across 394 font classes (see Table~\ref{tab:baselines}). Given the fine-grained nature of the task---many classes differ only in weight (e.g., Roboto-300 vs.\ Roboto-400) or subtle stylistic features---this represents strong performance.
 
 \subsection{Analysis}
 
@@ -235,14 +235,14 @@ We compute a full confusion matrix across all classes to analyze per-class perfo
 \begin{figure}[t]
     \centering
     \includegraphics[width=0.85\textwidth]{figures/per_family_accuracy.pdf}
-    \caption{Classification accuracy broken down by font family, sorted from lowest to highest. Most families achieve near-perfect accuracy; lower-performing families tend to have many visually similar weight variants.}
+    \caption{Top-1 variant-level accuracy broken down by font family, sorted from lowest to highest. Most families achieve near-perfect accuracy; lower-performing families tend to have many visually similar weight variants.}
     \label{fig:per_family_accuracy}
 \end{figure}
 
 \begin{figure}[t]
     \centering
     \includegraphics[width=0.75\textwidth]{figures/accuracy_vs_variants.pdf}
-    \caption{Per-family accuracy plotted against the number of weight variants in each family. Families with more variants (and thus more visually similar classes to distinguish) tend to have lower accuracy, consistent with the hypothesis that intra-family weight confusion drives most classification errors.}
+    \caption{Top-1 variant-level accuracy plotted against the number of weight variants in each family. Families with more variants (and thus more visually similar classes to distinguish) tend to have lower accuracy, consistent with the hypothesis that intra-family weight confusion drives most classification errors.}
     \label{fig:accuracy_vs_variants}
 \end{figure}
 
@@ -282,7 +282,7 @@ Table~\ref{tab:severity} reports both metrics. Family-level accuracy confirms th
 
 \begin{table}[h]
 \centering
-\caption{Error severity analysis. Family-level accuracy collapses weight variants; relative severity $\Pi$ is a scale-invariant ratio of the model's embedding-distance-weighted error to the random baseline.}
+\caption{Error severity analysis. Family-level accuracy collapses weight variants; relative severity $\Pi$ is a scale-invariant ratio of the model's embedding-distance-weighted error to the random baseline. Note: values in this table are populated by LaTeX macros generated from \texttt{confusion\_matrix.py} and will be updated when evaluation is re-run with the latest model checkpoint.}
 \label{tab:severity}
 \begin{tabular}{lr}
 \toprule
@@ -346,7 +346,7 @@ The trained model is released on HuggingFace Hub as \texttt{dchen0/font\_classif
 % ---- 9. Conclusion ----
 \section{Conclusion}
 
-We have presented a font classification system that identifies 394 font variants with 86\% accuracy by fine-tuning a DINOv2 Vision Transformer with LoRA. The approach is parameter-efficient, training roughly 1\% of model parameters, and is supported by a reproducible synthetic data generation pipeline. The model, dataset, and code are publicly available to support further research in document analysis and typographic recognition.\footnote{Source code: \url{https://github.com/Create-Inc/font-model}}
+We have presented a font classification system that identifies 394 font variants with 98.9\% accuracy by fine-tuning a DINOv2 Vision Transformer with LoRA. The approach is parameter-efficient, training roughly 1\% of model parameters, and is supported by a reproducible synthetic data generation pipeline. The model, dataset, and code are publicly available to support further research in document analysis and typographic recognition.\footnote{Source code: \url{https://github.com/Create-Inc/font-model}}
 
 % ---- Acknowledgments ----
 \section*{Acknowledgments}
