@@ -163,7 +163,7 @@ if __name__ == "__main__":
     logger.info(f"Loading dataset from {args.data_dir}")
     # Get label names from directory names and sort them alphabetically
     # to match the order used by the imagefolder dataset loader
-    label_names = sorted(os.listdir(f"{args.data_dir}/train"))
+    label_names = sorted(d for d in os.listdir(f"{args.data_dir}/train") if not d.startswith('.'))
     logger.info(f"Found {len(label_names)} labels")
 
     if len(label_names) <= 1:
