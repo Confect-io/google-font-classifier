@@ -287,7 +287,7 @@ Table~\ref{tab:severity} reports both metrics. Family-level accuracy confirms th
 
 \begin{table}[h]
 \centering
-\caption{Error severity analysis. Family-level accuracy collapses weight variants; relative severity $\Pi$ is a scale-invariant ratio of the model's embedding-distance-weighted error to the random baseline. Note: values in this table are populated by LaTeX macros generated from \texttt{confusion\_matrix.py} and will be updated when evaluation is re-run with the latest model checkpoint.}
+\caption{Error severity analysis. Family-level accuracy collapses weight variants; relative severity $\Pi$ is a scale-invariant ratio of the model's typographic-distance-weighted error to the random baseline.}
 \label{tab:severity}
 \begin{tabular}{lr}
 \toprule
@@ -303,7 +303,7 @@ SWER (random baseline) & \swerRandom{} \\
 \end{tabular}
 \end{table}
 
-Figure~\ref{fig:dendrogram} visualizes the font family similarity hierarchy recovered by UPGMA clustering on the centroid distances. Serif, sans-serif, monospace, and display families occupy distinct branches, confirming that the embedding space captures typographic structure.
+Figure~\ref{fig:dendrogram} visualizes the font family similarity hierarchy recovered by UPGMA clustering on cosine distances between mean \texttt{[CLS]} embeddings. Note that this dendrogram uses model-derived distances (to show what the model has learned), whereas the SWER metric above uses the metadata-based typographic distance (to provide a model-independent evaluation). Serif, sans-serif, monospace, and display families occupy distinct branches in both, confirming that the model's learned representations align with typographic structure.
 
 \subsection{Baseline Comparisons}
 
