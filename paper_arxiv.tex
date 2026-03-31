@@ -263,10 +263,15 @@ Top-1 accuracy treats all misclassifications equally, but confusing two adjacent
 The simplest correction: collapse all weight variants into their parent family and score a prediction as correct if the predicted and true labels share the same family, regardless of weight. The gap between variant-level and family-level accuracy directly quantifies how much of the raw error rate is due to within-family weight confusion versus genuine cross-family misidentification.
 
 \subparagraph{Relative severity.}
-For a continuous measure, we define a \emph{severity-weighted error rate} (SWER) using the model's own learned representations. For each of the $K = 394$ classes, we compute a centroid $\mathbf{c}_k$ by averaging the \texttt{[CLS]} token embeddings (from the final hidden layer) of all test samples belonging to class~$k$. The pairwise cosine distance between centroids is:
-\begin{equation}
-    d(i, j) = 1 - \frac{\mathbf{c}_i \cdot \mathbf{c}_j}{\|\mathbf{c}_i\| \, \|\mathbf{c}_j\|}
-\end{equation}
+For a continuous measure, we define a \emph{severity-weighted error rate} (SWER) using a typographic metadata distance that is independent of the model being evaluated. The pairwise distance $d(i, j)$ between font classes $i$ and $j$ is defined by a tier structure reflecting typographic similarity:
+\begin{itemize}[leftmargin=*,nosep]
+    \item $d = 0$: same variant (correct prediction).
+    \item $d \in [0.2, 0.4]$: same family, different weight---scaled linearly by the normalized weight difference (e.g., 400 vs.\ 500 yields $d \approx 0.22$; 300 vs.\ 900 yields $d = 0.4$).
+    \item $d = 0.7$: different family, same typographic category (e.g., both sans-serif).
+    \item $d = 1.0$: different typographic category (e.g., serif vs.\ sans-serif).
+\end{itemize}
+This distance function satisfies the metric space axioms and is fully determined by font metadata---it does not depend on the model's learned representations, avoiding the circularity that would arise from using the model's own embeddings to grade its errors.
+
 For each prediction, the severity is $s(y, \hat{y}) = 0$ if correct and $d(y, \hat{y})$ otherwise. The SWER is the mean severity across all $N$ test predictions:
 \begin{equation}
     \text{SWER} = \frac{1}{N} \sum_{n=1}^{N} s(y_n, \hat{y}_n)

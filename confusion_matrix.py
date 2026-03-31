@@ -459,8 +459,73 @@ def compute_family_centroids_and_distances(centroids, all_labels):
     return family_centroids, family_dist_matrix, family_names
 
 
+def compute_typographic_distance_matrix(all_labels):
+    """Build a distance matrix from typographic metadata (non-circular).
+
+    Distance tiers:
+      0.0  — same variant
+      0.2  — same family, adjacent weight (e.g., 400 vs 500)
+      0.4  — same family, distant weight (e.g., 300 vs 900)
+      0.7  — different family, same category (both sans-serif)
+      1.0  — different category (serif vs sans-serif)
+
+    Weight is extracted from the label suffix; category is inferred from
+    a hardcoded mapping of known families.
+    """
+    SERIF = {"CrimsonPro", "PlayfairDisplay", "Merriweather", "Aleo", "Lora",
+             "NotoSerif", "SourceSerif4", "Bitter"}
+    MONO = {"JetBrainsMono", "FiraCode", "SourceCodePro", "RobotoMono"}
+    DISPLAY = {"Ultra", "BigShouldersText", "Pacifico", "Lobster", "BebasNeue"}
+    # Everything else is sans-serif
+
+    def get_category(family):
+        if family in SERIF:
+            return "serif"
+        if family in MONO:
+            return "mono"
+        if family in DISPLAY:
+            return "display"
+        return "sans"
+
+    WEIGHT_MAP = {
+        "Thin": 100, "ExtraLight": 200, "UltraLight": 200, "Light": 300,
+        "Regular": 400, "": 400, "Medium": 500, "SemiBold": 600,
+        "DemiBold": 600, "Bold": 700, "ExtraBold": 800, "UltraBold": 800,
+        "Black": 900, "Heavy": 900,
+    }
+
+    def parse_weight(label):
+        family = extract_family(label)
+        suffix = label[len(family):].lstrip("-_")
+        # Strip Italic
+        suffix = suffix.replace("Italic", "").strip("-_ ")
+        return WEIGHT_MAP.get(suffix, 400)
+
+    n = len(all_labels)
+    dist = np.zeros((n, n))
+    families = [extract_family(l) for l in all_labels]
+    categories = [get_category(f) for f in families]
+    weights = [parse_weight(l) for l in all_labels]
+
+    for i in range(n):
+        for j in range(i + 1, n):
+            if families[i] == families[j]:
+                # Same family — distance based on weight difference
+                w_diff = abs(weights[i] - weights[j])
+                # Normalize: adjacent weight (100 diff) = 0.2, max (800 diff) = 0.4
+                d = 0.2 + 0.2 * min(w_diff / 800.0, 1.0)
+            elif categories[i] == categories[j]:
+                d = 0.7
+            else:
+                d = 1.0
+            dist[i, j] = d
+            dist[j, i] = d
+
+    return dist
+
+
 def compute_severity_metrics(y_true, y_pred, all_labels, dist_matrix):
-    """Compute severity-weighted error metrics using embedding distances."""
+    """Compute severity-weighted error metrics using a distance matrix."""
     label_to_idx = {l: i for i, l in enumerate(all_labels)}
     severities = []
     misclass_severities = []
@@ -616,7 +681,9 @@ def main():
         os.path.join(args.output_dir, "font_dendrogram_full.pdf"),
         title="Font Variant Similarity (UPGMA of [CLS] Embeddings)",
     )
-    severity = compute_severity_metrics(y_true, y_pred, all_labels, dist_matrix)
+    # Use typographic metadata distance for SWER (non-circular — independent of model)
+    typo_dist_matrix = compute_typographic_distance_matrix(all_labels)
+    severity = compute_severity_metrics(y_true, y_pred, all_labels, typo_dist_matrix)
 
     # --- JSON outputs ---
     cm_dict = defaultdict(lambda: defaultdict(int))
