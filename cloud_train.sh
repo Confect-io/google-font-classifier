@@ -192,6 +192,7 @@ else:
 " 2>/dev/null || echo "==> Log upload failed (non-critical)"
 }
 trap 'echo "SCRIPT CRASHED at line $LINENO (exit code $?)"; upload_log' ERR
+trap 'echo "SCRIPT KILLED BY SIGNAL (SIGTERM/SIGHUP) at $(date)"; upload_log; exit 143' SIGTERM SIGHUP
 
 HF_DATASET="__HF_DATASET__"
 MODE="__MODE__"
@@ -380,6 +381,7 @@ curl -s -X PUT "https://console.vast.ai/api/v0/instances/__INSTANCE_ID__/" \
 curl -s -X DELETE "https://console.vast.ai/api/v0/instances/__INSTANCE_ID__/" \
     -H "Authorization: Bearer __VAST_API_KEY__" || true
 echo "==> Instance destroyed."
+echo "==> SCRIPT COMPLETED SUCCESSFULLY at $(date)"
 TRAINING_SCRIPT
 )
 
