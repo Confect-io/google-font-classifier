@@ -288,6 +288,64 @@ print(f'Cached: {len(ds[\"train\"])} train, {len(ds[\"test\"])} test')
     df -h /workspace | tail -1
 fi
 
+# --- Checkpoint sync helpers ---
+sync_checkpoints_to_hf() {
+    # Upload latest checkpoint to HF in the background
+    local mode_name=$1
+    local output_dir=$2
+    while true; do
+        sleep 600  # every 10 minutes
+        local latest=$(ls -d ${output_dir}/checkpoint-* 2>/dev/null | sort -t- -k2 -n | tail -1)
+        if [ -n "$latest" ]; then
+            python3 -c "
+from huggingface_hub import HfApi
+api = HfApi(token='__HF_TOKEN__')
+api.upload_folder(
+    folder_path='$latest',
+    path_in_repo='${mode_name}/$(basename $latest)',
+    repo_id='__HF_RESULTS__',
+    repo_type='model',
+)
+print('Checkpoint synced: ${mode_name}/$(basename $latest)')
+" 2>/dev/null || true
+        fi
+    done
+}
+
+download_checkpoint_from_hf() {
+    # Check HF for an existing checkpoint and download it
+    local mode_name=$1
+    local output_dir=$2
+    python3 -c "
+from huggingface_hub import HfApi, snapshot_download
+import os, re
+api = HfApi(token='__HF_TOKEN__')
+try:
+    files = api.list_repo_files('__HF_RESULTS__', repo_type='model')
+except:
+    exit(0)
+# Find checkpoints for this mode
+checkpoints = set()
+for f in files:
+    m = re.match(r'^${mode_name}/(checkpoint-\d+)/', f)
+    if m:
+        checkpoints.add(m.group(1))
+if not checkpoints:
+    print('No checkpoint found on HF')
+    exit(0)
+# Get the highest checkpoint
+latest = sorted(checkpoints, key=lambda x: int(x.split('-')[1]))[-1]
+print(f'Downloading checkpoint: ${mode_name}/{latest}')
+snapshot_download(
+    repo_id='__HF_RESULTS__',
+    repo_type='model',
+    local_dir='$output_dir/..',
+    allow_patterns=[f'${mode_name}/{latest}/*'],
+)
+print(f'Checkpoint restored: {latest}')
+" 2>/dev/null
+}
+
 # --- Training (disable set -e, each run handles its own errors) ---
 set +e
 FAILED_RUNS=""
@@ -296,16 +354,30 @@ run_training() {
     local extra_flags=$2
     local output_dir="${OUTPUT_BASE}/${mode_name}"
 
-    # Skip if already completed (has a trainer_state.json from a previous run)
-    if [ -f "${output_dir}/trainer_state.json" ] || [ -f "${output_dir}/training_args.bin" ]; then
+    # Skip if already completed (has a result_model directory)
+    if [ -d "${output_dir}/result_model" ]; then
         echo "==> Skipping $mode_name (already completed)"
         return 0
+    fi
+
+    # Check HF for an existing checkpoint to resume from
+    echo "==> Checking for existing checkpoint on HuggingFace..."
+    download_checkpoint_from_hf "$mode_name" "$output_dir"
+    local checkpoint_arg=""
+    local latest_ckpt=$(ls -d ${output_dir}/checkpoint-* 2>/dev/null | sort -t- -k2 -n | tail -1)
+    if [ -n "$latest_ckpt" ]; then
+        echo "==> Resuming from checkpoint: $latest_ckpt"
+        checkpoint_arg="--checkpoint $latest_ckpt"
     fi
 
     echo ""
     echo "============================================"
     echo "  Training: $mode_name (GPUs: $NUM_GPUS)"
     echo "============================================"
+
+    # Start background checkpoint sync
+    sync_checkpoints_to_hf "$mode_name" "$output_dir" &
+    local sync_pid=$!
 
     local train_cmd="python3 train_model.py"
     if [ "$NUM_GPUS" -gt 1 ]; then
@@ -318,12 +390,16 @@ run_training() {
         --batch_size "$BATCH_SIZE" \
         --epochs "$EPOCHS" \
         --learning_rate "$LR" \
+        $checkpoint_arg \
         $extra_flags; then
         echo "==> Finished: $mode_name"
     else
         echo "==> FAILED: $mode_name (exit code $?)"
         FAILED_RUNS="$FAILED_RUNS $mode_name"
     fi
+
+    # Stop checkpoint sync
+    kill $sync_pid 2>/dev/null || true
 }
 
 case "$MODE" in
