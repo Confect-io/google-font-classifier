@@ -329,6 +329,15 @@ Full Fine-Tuning     & 87.2M & 93.4\%  & --  & -- \\
 \end{tabular}
 \end{table}
 
+Figure~\ref{fig:convergence} shows the validation accuracy over training for each method. The LoRA configurations converge rapidly, reaching 95\% accuracy within the first 5 epochs and plateauing near 99\% by epoch 30. Full fine-tuning converges more slowly, requiring approximately 80 epochs to reach its final accuracy of 95.9\%. The linear probe converges quickly but to a much lower ceiling, confirming that the frozen DINOv2 features alone are insufficient for fine-grained font discrimination. These convergence profiles demonstrate that LoRA's parameter efficiency translates directly to faster training convergence, not just fewer trainable parameters.
+
+\begin{figure}[t]
+    \centering
+    \includegraphics[width=\textwidth]{figures/convergence_curves.pdf}
+    \caption{Validation accuracy over training epochs for each fine-tuning strategy. LoRA variants converge to $>$98\% within 10 epochs, while full fine-tuning requires $\sim$80 epochs to reach 96\%. The dashed line marks the 50-epoch evaluation point used in Table~\ref{tab:baselines}.}
+    \label{fig:convergence}
+\end{figure}
+
 \subsection{Generalization to Real-World Images}
 
 While our model is trained entirely on synthetically rendered text, practical deployment requires robustness to real-world typography encountered in screenshots, photographs of signage, and web page captures. We are assembling a manually collected evaluation set of web typography images spanning diverse fonts, backgrounds, and capture conditions. Results on this real-world benchmark will be reported in a future revision.
