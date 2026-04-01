@@ -1,6 +1,6 @@
 # Finetuned DINOv2 Vision Transformer for categorizing Google Fonts
 
-A font classification system that identifies 394 font variants across 32 families from rendered text images, using LoRA fine-tuning of DINOv2.
+A font classification system that identifies 394 font variants across 32 families from rendered text images, using LoRA fine-tuning of DINOv2. Achieves 98.9% top-1 validation accuracy with only ~1% of parameters trainable.
 
 ## Quick Start
 
@@ -63,7 +63,7 @@ HF_HUB_DISABLE_XET=1 huggingface-cli upload <user>/<repo> test.tar test.tar --re
 python train_model.py \
     --data_dir <dataset folder> \
     --output_dir <output folder> \
-    --batch_size 32 \
+    --batch_size 64 \
     --epochs 100 \
     --learning_rate 1e-4 \
     --lora_rank 8 \
@@ -112,28 +112,72 @@ python serve_model.py <model name or path> <image path>
 
 ## Cloud Training
 
-Runs training end-to-end on a Vast.ai GPU instance: finds a machine, uploads the code, trains, downloads results, and destroys the instance automatically.
+Runs training end-to-end on Vast.ai GPU instances: finds a machine, uploads the code, trains, uploads results to HuggingFace, and destroys the instance automatically. Includes auto-retry (up to 5 instances), health checks, and crash log upload.
 
 **Setup:**
 
 ```bash
 pip install vastai
 vastai set api-key <your key>
+vastai create ssh-key "$(cat ~/.ssh/id_ed25519.pub)"
+huggingface-cli login
 ```
 
 **Usage:**
 
 ```bash
-# Run all baselines (linear probe, ResNet-50, LoRA r=4/8/16, full FT)
-bash cloud_train.sh --hf_dataset dchen0/font_crops_v5 --mode all
+# Run all baselines on separate instances in parallel
+bash cloud_train.sh --hf_dataset dchen0/font_crops_v5 --hf_results dchen0/font-model-results --mode all --gpu RTX_3090 --parallel
 
-# Or individually
-bash cloud_train.sh --hf_dataset dchen0/font_crops_v5 --mode lora
-bash cloud_train.sh --hf_dataset dchen0/font_crops_v5 --mode full
-bash cloud_train.sh --hf_dataset dchen0/font_crops_v5 --mode resnet
+# Run a single mode
+bash cloud_train.sh --hf_dataset dchen0/font_crops_v5 --hf_results dchen0/font-model-results --mode lora --gpu RTX_3090
+
+# Dry run (tiny test dataset, validates full pipeline in ~5 min)
+bash cloud_train.sh --dry_run --gpu RTX_3090
 ```
 
-Options: `--gpu` (default RTX_4090), `--max_price` (default $2/hr), `--batch_size`, `--epochs`, `--output` (default ./cloud_results).
+**Options:**
+
+| Flag | Default | Description |
+|---|---|---|
+| `--hf_dataset` | (required) | HuggingFace dataset to train on |
+| `--hf_results` | (required) | HuggingFace repo for results upload |
+| `--mode` | `lora` | Training mode: `lora`, `lora4`, `lora16`, `full`, `linear`, `resnet`, or `all` |
+| `--gpu` | `RTX_4090` | GPU type (e.g., `RTX_3090`, `A100`) |
+| `--max_price` | `2.00` | Max hourly price in USD |
+| `--batch_size` | `64` | Training batch size |
+| `--epochs` | `100` | Number of training epochs |
+| `--num_gpus` | `1` | GPUs per instance (multi-GPU via `accelerate`) |
+| `--parallel` | off | Launch each mode on a separate instance |
+| `--dry_run` | off | Use tiny test dataset, 1 epoch, defaults to all modes |
+| `--ssh_key` | `~/.ssh/vastai` | SSH key for Vast.ai instances |
+
+**Features:**
+- Auto-retry with up to 5 different instances per mode
+- Health check after launch (connectivity, CUDA, pip)
+- Checkpoints synced to HuggingFace every 10 minutes (resumable on preemption)
+- Training logs uploaded on any exit (crash, signal, or success)
+- Instance auto-destroys after uploading results
+
+**Dry run:**
+
+Always dry run before a full training run to catch issues early:
+
+```bash
+# Test all modes (default)
+bash cloud_train.sh --dry_run --gpu RTX_3090
+
+# Test a specific mode
+bash cloud_train.sh --dry_run --mode resnet --gpu RTX_3090
+```
+
+This uses a tiny test dataset (`dchen0/font_crops_test`, 3 classes, 39 images) to validate the entire pipeline in ~5 minutes.
+
+To regenerate the test dataset:
+
+```bash
+python create_test_dataset.py --synthetic --upload
+```
 
 ## Evaluation
 
@@ -151,7 +195,7 @@ Produces:
 - `figures/per_family_accuracy.pdf` — Per-family accuracy breakdown
 - `figures/tsne_embeddings.pdf` — t-SNE of [CLS] embeddings
 - `figures/font_dendrogram.pdf` — UPGMA clustering of font families
-- `figures/metrics.tex` — LaTeX macros for paper
+- `figures/metrics.tex` — LaTeX macros for paper (including SWER with typographic metadata distance)
 - `confusion_matrix.json` — Raw counts
 - `bad_images.json` — All misclassified images
 
