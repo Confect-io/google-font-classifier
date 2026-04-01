@@ -49,7 +49,7 @@
 
 % ---- Abstract ----
 \begin{abstract}
-We present a font classification system capable of identifying 394 font variants across 32 families from rendered text images. Our approach fine-tunes a DINOv2 Vision Transformer using Low-Rank Adaptation (LoRA), achieving 98.9\% top-1 accuracy while training roughly 1\% of the model's 87.2M parameters. We introduce a synthetic dataset generation pipeline that renders Google Fonts at scale with diverse augmentations including randomized colors, alignment, line wrapping, and Gaussian noise, producing training images that generalize to real-world typographic samples. The model incorporates built-in preprocessing to ensure consistency between training and inference, and is deployed as a HuggingFace Inference Endpoint. We release the model, dataset, and full training pipeline as open-source resources.
+We present a font classification system capable of identifying 394 font variants across 32 families from rendered text images. Our approach fine-tunes a DINOv2 Vision Transformer using Low-Rank Adaptation (LoRA), achieving 98.7\% top-1 accuracy while training roughly 1\% of the model's 87.2M parameters. We introduce a synthetic dataset generation pipeline that renders Google Fonts at scale with diverse augmentations including randomized colors, alignment, line wrapping, and Gaussian noise, producing training images that generalize to real-world typographic samples. The model incorporates built-in preprocessing to ensure consistency between training and inference, and is deployed as a HuggingFace Inference Endpoint. We release the model, dataset, and full training pipeline as open-source resources.
 \end{abstract}
 
 % ---- 1. Introduction ----
@@ -63,7 +63,7 @@ In this work, we take advantage of recent advances in self-supervised visual rep
 
 Our contributions are as follows:
 \begin{enumerate}[leftmargin=*]
-    \item A parameter-efficient fine-tuning approach for font classification that adapts DINOv2 with LoRA, achieving 98.9\% top-1 accuracy across 394 font classes.
+    \item A parameter-efficient fine-tuning approach for font classification that adapts DINOv2 with LoRA, achieving 98.7\% top-1 accuracy across 394 font classes.
     \item A scalable synthetic dataset generation pipeline that renders Google Fonts with diverse augmentations to produce training data robust to visual variation.
     \item An end-to-end system with built-in preprocessing that ensures consistency between training and deployment, released as an open-source model and dataset on HuggingFace.
 \end{enumerate}
@@ -197,7 +197,7 @@ Training is conducted using PyTorch with HuggingFace Transformers and the PEFT l
 
 \subsection{Classification Accuracy}
 
-The best-performing configuration (LoRA $r{=}16$) achieves \textbf{98.9\% top-1 accuracy} on the held-out test set across 394 font classes (see Table~\ref{tab:baselines}). Given the fine-grained nature of the task---many classes differ only in weight (e.g., Roboto-300 vs.\ Roboto-400) or subtle stylistic features---this represents strong performance.
+The best-performing configurations (LoRA $r{=}8$ and $r{=}16$) achieve \textbf{98.7\% top-1 accuracy} on the held-out test set across 394 font classes at 50 training epochs (see Table~\ref{tab:baselines}). Given the fine-grained nature of the task---many classes differ only in weight (e.g., Roboto-300 vs.\ Roboto-400) or subtle stylistic features---this represents strong performance.
 
 \subsection{Analysis}
 
@@ -311,7 +311,7 @@ To contextualize the efficiency--accuracy trade-off of our LoRA approach, we com
 
 \begin{table}[h]
 \centering
-\caption{Comparison of fine-tuning strategies on DINOv2-Base with 394 font classes. All methods use the same training data, hyperparameters (where applicable), and evaluation protocol.}
+\caption{Comparison of fine-tuning strategies on DINOv2-Base with 394 font classes. All methods are evaluated at 50 training epochs using the same training data, hyperparameters (where applicable), and evaluation protocol.}
 \label{tab:baselines}
 \begin{tabular}{lrrrr}
 \toprule
@@ -321,10 +321,10 @@ ResNet-50 (CNN)      & 25.6M & --  & --  & -- \\
 \midrule
 \multicolumn{5}{l}{\emph{DINOv2-Base backbone:}} \\
 Linear Probe         & 606K  & 36.6\%  & --  & -- \\
-LoRA ($r{=}4$)       & 753K  & 98.1\%  & --  & -- \\
-LoRA ($r{=}8$)       & 900K  & --  & --  & -- \\
-LoRA ($r{=}16$)      & 1.2M  & 98.9\%  & --  & -- \\
-Full Fine-Tuning     & 87.2M & --  & --  & -- \\
+LoRA ($r{=}4$)       & 753K  & 97.9\%  & --  & -- \\
+LoRA ($r{=}8$)       & 900K  & 98.7\%  & --  & -- \\
+LoRA ($r{=}16$)      & 1.2M  & 98.7\%  & --  & -- \\
+Full Fine-Tuning     & 87.2M & 93.4\%  & --  & -- \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -351,7 +351,7 @@ The trained model is released on HuggingFace Hub as \texttt{dchen0/font\_classif
 % ---- 9. Conclusion ----
 \section{Conclusion}
 
-We have presented a font classification system that identifies 394 font variants with 98.9\% accuracy by fine-tuning a DINOv2 Vision Transformer with LoRA. The approach is parameter-efficient, training roughly 1\% of model parameters, and is supported by a reproducible synthetic data generation pipeline. The model, dataset, and code are publicly available to support further research in document analysis and typographic recognition.\footnote{Source code: \url{https://github.com/Create-Inc/font-model}}
+We have presented a font classification system that identifies 394 font variants with 98.7\% accuracy by fine-tuning a DINOv2 Vision Transformer with LoRA. The approach is parameter-efficient, training roughly 1\% of model parameters, and is supported by a reproducible synthetic data generation pipeline. The model, dataset, and code are publicly available to support further research in document analysis and typographic recognition.\footnote{Source code: \url{https://github.com/Create-Inc/font-model}}
 
 % ---- Acknowledgments ----
 \section*{Acknowledgments}
