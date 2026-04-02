@@ -91,7 +91,7 @@ Full fine-tuning of large pre-trained models is computationally expensive and ri
 
 \subsection{Font Selection}
 
-We source fonts from the Google Fonts open-source repository.\footnote{\url{https://github.com/google/fonts}} From the full catalog, we select a curated set of 32 base font families spanning diverse typographic categories: sans-serif (e.g., Inter, Roboto, Poppins, DM Sans), serif (e.g., Crimson Pro, Playfair Display, Merriweather), monospace (JetBrains Mono), and display faces (e.g., Ultra, Big Shoulders Text). Selection was guided by three criteria: (1)~\emph{prevalence in modern design tooling}---we prioritized fonts frequently used in Figma, Dribbble, and similar platforms for website and mobile design; (2)~\emph{visual distinctiveness}---we excluded near-duplicate families that differ only in minor metrics to keep classes well-separated; and (3)~\emph{representativeness of high-quality digital design}---the set reflects the typographic choices typical of professional web and mobile interfaces. Many of these families include variable font axes (primarily weight), and we enumerate each axis variation as a separate class. This produces a total of 394 distinct font variants for classification.
+We source fonts from the Google Fonts open-source repository.\footnote{\url{https://github.com/google/fonts}} From the full catalog, we select a curated set of 32 base font families spanning diverse typographic categories: sans-serif (e.g., Inter, Roboto, Poppins, DM Sans), serif (e.g., Crimson Pro, Playfair Display, Merriweather), monospace (JetBrains Mono), and display faces (e.g., Ultra, Big Shoulders Text). Selection was guided by three criteria: (1)~\emph{prevalence in modern design tooling}---we selected fonts commonly encountered in Figma, Dribbble, and similar platforms, based on the authors' experience building production design tools for website and mobile design; (2)~\emph{visual distinctiveness}---we excluded near-duplicate families that differ only in minor metrics to keep classes well-separated; and (3)~\emph{representativeness of high-quality digital design}---the set reflects the typographic choices typical of professional web and mobile interfaces. Many of these families include variable font axes (primarily weight), and we enumerate each axis variation as a separate class. This produces a total of 394 distinct font variants for classification.
 
 \subsubsection{Iterative Font Curation}
 
@@ -131,7 +131,7 @@ All generated images are verified programmatically using PIL's image verificatio
 
 \subsection{Model Architecture}
 
-Our model builds on the DINOv2-Base architecture \citep{oquab2024dinov2}, specifically the \texttt{dinov2\-base\-imagenet1k\-1\-layer} variant pre-trained on ImageNet-1K. This model uses the standard ViT-B/14 architecture with patch size 14, embedding dimension 768, 12 attention heads, and 12 transformer blocks.
+Our model builds on the DINOv2-Base architecture \citep{oquab2024dinov2}, specifically the \texttt{dinov2-base-imagenet1k-1-layer} variant pre-trained on ImageNet-1K. This model uses the standard ViT-B/14 architecture with patch size 14, embedding dimension 768, 12 attention heads, and 12 transformer blocks.
 
 We add a linear classification head mapping the \texttt{[CLS]} token representation to the 394 output classes. The classification head is randomly initialized and fully trainable.
 
@@ -204,7 +204,7 @@ The best-performing configuration (LoRA $r{=}8$) achieves \textbf{99.0\% top-1 a
 We compute a full confusion matrix across all classes to analyze per-class performance and systematic misclassification patterns. Figure~\ref{fig:confusion_matrix} shows the row-normalized confusion matrix with font families grouped together. Key observations include:
 
 \begin{itemize}[leftmargin=*]
-    \item \textbf{Weight variant confusion.} The most common errors occur between adjacent weight variants of the same font family (e.g., weight 400 vs.\ 500). This is expected, as the visual difference between adjacent weights can be as small as a few pixels of stroke width at the $224 \times 224$ resolution.
+    \item \textbf{Weight variant confusion.} The most frequent individual error pairs remain within-family weight confusions (e.g., weight 400 vs.\ 500), though at 99\% accuracy the error distribution also includes cross-family pairs with similar visual characteristics. This is expected, as the visual difference between adjacent weights can be as small as a few pixels of stroke width at the $224 \times 224$ resolution.
 
     \item \textbf{Cross-family accuracy.} Classification between distinct font families (e.g., a serif vs.\ sans-serif) is near-perfect, indicating the model captures high-level typographic structure effectively.
 
@@ -270,7 +270,7 @@ For a continuous measure, we define a \emph{severity-weighted error rate} (SWER)
     \item $d = 0.7$: different family, same typographic category (e.g., both sans-serif).
     \item $d = 1.0$: different typographic category (e.g., serif vs.\ sans-serif).
 \end{itemize}
-This distance function satisfies the metric space axioms and is fully determined by font metadata---it does not depend on the model's learned representations, avoiding the circularity that would arise from using the model's own embeddings to grade its errors.
+This distance function is symmetric and assigns zero distance only to identical variants and is fully determined by font metadata---it does not depend on the model's learned representations, avoiding the circularity that would arise from using the model's own embeddings to grade its errors.
 
 For each prediction, the severity is $s(y, \hat{y}) = 0$ if correct and $d(y, \hat{y})$ otherwise. The SWER is the mean severity across all $N$ test predictions:
 \begin{equation}
@@ -329,7 +329,7 @@ Full Fine-Tuning     & 87.2M & 93.4\% \\
 \end{tabular}
 \end{table}
 
-ResNet-50 achieves 98.8\% accuracy, matching the LoRA configurations despite having 25.6M trainable parameters. This is not surprising: the ResNet-50 baseline is fine-tuned from ImageNet-pretrained weights, so it also benefits from transfer learning rather than training from scratch. LoRA's advantage over ResNet-50 is therefore not raw accuracy but efficiency---LoRA trains 28$\times$ fewer parameters, produces a ${\sim}$3\,MB adapter file versus a ${\sim}$100\,MB full model, and converges faster (reaching 95\% accuracy by epoch 5, whereas ResNet-50 requires substantially more epochs). These differences matter for deployment size, iteration speed, and the ability to maintain a single frozen backbone across multiple fine-tuned tasks.
+ResNet-50 achieves 98.8\% accuracy, matching the LoRA configurations despite having 25.6M trainable parameters. This is not surprising: the ResNet-50 baseline is fine-tuned from ImageNet-pretrained weights, so it also benefits from transfer learning rather than training from scratch. LoRA's advantage over ResNet-50 is therefore not raw accuracy but efficiency---LoRA trains 28$\times$ fewer parameters, produces a ${\sim}$3\,MB adapter file versus a ${\sim}$100\,MB full model, and converges faster (reaching 95\% accuracy by epoch 5, whereas ResNet-50 requires substantially more epochs; see Figure~\ref{fig:convergence}). These differences matter for deployment size, iteration speed, and the ability to maintain a single frozen backbone across multiple fine-tuned tasks.
 
 We attribute full fine-tuning's underperformance (93.4\% at 50 epochs, 95.9\% converged) to overfitting: with all 87.2M parameters trainable, the model has far more capacity than needed for ${\sim}$575 training images per class, leading to degradation of the pretrained features that LoRA preserves by construction.
 
