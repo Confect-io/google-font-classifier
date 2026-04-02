@@ -48,11 +48,66 @@ def parse_args():
 # Model loading
 # ---------------------------------------------------------------------------
 
-def load_model(model_name):
-    model = Dinov2ForImageClassification.from_pretrained(
-        model_name, ignore_mismatched_sizes=True,
-    )
-    processor = AutoImageProcessor.from_pretrained(model_name)
+def load_model(model_name, data_dir=None):
+    """Load a model from a HuggingFace name or local path.
+
+    Supports both merged models and LoRA adapter directories. If the path
+    contains an adapter_config.json, the base model is loaded and the
+    adapter is applied and merged automatically.
+    """
+    import os
+    adapter_config = os.path.join(model_name, "adapter_config.json") if os.path.isdir(model_name) else None
+
+    if adapter_config and os.path.exists(adapter_config):
+        # LoRA adapter — load base model, apply adapter, merge
+        from peft import PeftModel
+        from safetensors import safe_open
+        import json
+        with open(adapter_config) as f:
+            cfg = json.load(f)
+        base_name = cfg.get("base_model_name_or_path", "facebook/dinov2-base-imagenet1k-1-layer")
+
+        # Infer num_labels from the adapter checkpoint's classifier weight shape
+        adapter_file = os.path.join(model_name, "adapter_model.safetensors")
+        num_labels = None
+        if os.path.exists(adapter_file):
+            with safe_open(adapter_file, framework="pt") as f:
+                for key in f.keys():
+                    if "classifier" in key and "weight" in key:
+                        num_labels = f.get_tensor(key).shape[0]
+                        break
+
+        base = Dinov2ForImageClassification.from_pretrained(
+            base_name, num_labels=num_labels, ignore_mismatched_sizes=True,
+        )
+        model = PeftModel.from_pretrained(base, model_name)
+        model = model.merge_and_unload()
+        processor = AutoImageProcessor.from_pretrained(base_name)
+
+        # LoRA adapters don't store label mappings — infer from data_dir.
+        # Note: models trained before the ._* fix may have 788 classes (394 real
+        # + 394 macOS resource fork dirs). We reconstruct the full sorted label
+        # list (including ._* entries) to get the correct index mapping, then
+        # expose only the real labels for evaluation.
+        if data_dir:
+            all_dirs = sorted(os.listdir(os.path.join(data_dir, "train")))
+            real_dirs = [d for d in all_dirs if not d.startswith('.')]
+            if num_labels and num_labels != len(real_dirs):
+                # Model was trained with ._* dirs — build full mapping
+                id2label = {i: name for i, name in enumerate(all_dirs)}
+            else:
+                id2label = {i: name for i, name in enumerate(real_dirs)}
+            label2id = {v: k for k, v in id2label.items()}
+            model.config.id2label = id2label
+            model.config.label2id = label2id
+            model.config.num_labels = len(id2label)
+    else:
+        # Merged model or HuggingFace hub name
+        model = Dinov2ForImageClassification.from_pretrained(
+            model_name, ignore_mismatched_sizes=True,
+        )
+        processor = AutoImageProcessor.from_pretrained(model_name)
+
     model.eval()
     size = processor.size["shortest_edge"]
     transform = get_inference_transform(processor, size)
@@ -602,7 +657,7 @@ def main():
     print(f"Using device: {device}")
 
     print("Loading model ...")
-    model, transform = load_model(args.model)
+    model, transform = load_model(args.model, data_dir=args.data_dir)
     model.to(device)
 
     # --- Sanity check: verify test labels match model labels ---
