@@ -95,7 +95,7 @@ We source fonts from the Google Fonts open-source repository.\footnote{\url{http
 
 \subsubsection{Iterative Font Curation}
 
-The final font set is the result of four dataset iterations, each informed by the failures of the previous version. An initial proof-of-concept with 10~families (102~variants) achieved high accuracy but covered too few fonts to be practical. Expanding aggressively to over 700~variants from the broader Google Fonts catalog introduced many visually near-identical pairs (families differing only in minor spacing or hinting), which degraded accuracy substantially. Scaling back to 20~families helped but exposed insufficient training data and residual visual overlaps. The current version rebuilds the font set from scratch using the selection criteria described above, settling on 32~families with 394~variants and approximately 575~training images per variant. A critical engineering fix in this iteration---embedding preprocessing into the model's \texttt{forward} method---eliminated train--serve skew that had silently hurt earlier versions. All dataset versions are publicly available on HuggingFace.\footnote{\url{https://huggingface.co/datasets/dchen0/font_crops_v5}}
+The final font set is the result of four dataset iterations, each informed by the failures of the previous version. An initial proof-of-concept with 10~families (102~variants) achieved high accuracy but covered too few fonts to be practical. Expanding aggressively to over 700~variants from the broader Google Fonts catalog introduced many visually near-identical pairs (families differing only in minor spacing or hinting), which degraded accuracy substantially. Scaling back to 20~families helped but exposed insufficient training data and residual visual overlaps. The current version rebuilds the font set from scratch using the selection criteria described above, settling on 32~families with 394~variants and approximately 575~training images per variant. A critical engineering fix in this iteration---embedding preprocessing into the model's \texttt{forward} method---eliminated train--serve skew that had silently hurt earlier versions. All dataset versions are publicly available on HuggingFace.
 
 \subsection{Synthetic Image Generation}
 
@@ -197,7 +197,7 @@ Training is conducted using PyTorch with HuggingFace Transformers and the PEFT l
 
 \subsection{Classification Accuracy}
 
-The best-performing configuration (LoRA $r{=}8$) achieves \textbf{99.0\% top-1 accuracy} on the held-out test set across 394 font classes (Table~\ref{tab:severity}). Table~\ref{tab:baselines} compares all methods at a fixed 50-epoch budget. Given the fine-grained nature of the task---many classes differ only in weight (e.g., Roboto-300 vs.\ Roboto-400) or subtle stylistic features---this represents strong performance.
+The best-performing configuration (LoRA $r{=}8$) achieves \textbf{99.0\% top-1 accuracy} on the held-out test set across 394 font classes (Table~\ref{tab:severity}). LoRA $r{=}8$ achieved a peak validation accuracy of 99.0\% at epoch 99 after full 100-epoch training, marginally outperforming $r{=}16$ which peaked at 98.9\%. At a fixed 50-epoch budget (Table~\ref{tab:baselines}), the two configurations perform identically at 98.7\%, suggesting rank has minimal impact beyond $r{=}4$ for this task. Table~\ref{tab:baselines} compares all methods at a fixed 50-epoch budget. Given the fine-grained nature of the task---many classes differ only in weight (e.g., Roboto-300 vs.\ Roboto-400) or subtle stylistic features---this represents strong performance.
 
 \subsection{Analysis}
 
@@ -221,7 +221,7 @@ We compute a full confusion matrix across all classes to analyze per-class perfo
 \begin{figure}[t]
     \centering
     \includegraphics[width=0.85\textwidth]{figures/top_confused_pairs.pdf}
-    \caption{Top-20 most frequent misclassification pairs. The majority involve adjacent weight variants within the same font family, confirming that inter-family classification is near-perfect.}
+    \caption{Top-20 most frequent misclassification pairs. At 99\% top-1 accuracy, the remaining misclassifications are diverse---including both within-family weight confusions and cross-family pairs with similar visual characteristics (e.g., thin sans-serif variants).}
     \label{fig:top_confused_pairs}
 \end{figure}
 
@@ -242,7 +242,7 @@ We compute a full confusion matrix across all classes to analyze per-class perfo
 \begin{figure}[t]
     \centering
     \includegraphics[width=0.75\textwidth]{figures/accuracy_vs_variants.pdf}
-    \caption{Top-1 variant-level accuracy plotted against the number of weight variants in each family. Families with more variants (and thus more visually similar classes to distinguish) tend to have lower accuracy, consistent with the hypothesis that intra-family weight confusion drives most classification errors.}
+    \caption{Top-1 variant-level accuracy plotted against the number of weight variants in each family. At 99\% overall accuracy, per-family accuracy is uniformly high (0.96--1.00), though a slight downward trend remains for families with many visually similar weight variants.}
     \label{fig:accuracy_vs_variants}
 \end{figure}
 
@@ -266,7 +266,7 @@ The simplest correction: collapse all weight variants into their parent family a
 For a continuous measure, we define a \emph{severity-weighted error rate} (SWER) using a typographic metadata distance that is independent of the model being evaluated. The pairwise distance $d(i, j)$ between font classes $i$ and $j$ is defined by a tier structure reflecting typographic similarity:
 \begin{itemize}[leftmargin=*,nosep]
     \item $d = 0$: same variant (correct prediction).
-    \item $d \in [0.2, 0.4]$: same family, different weight---scaled linearly by the normalized weight difference (e.g., 400 vs.\ 500 yields $d \approx 0.22$; 300 vs.\ 900 yields $d = 0.4$).
+    \item $d = 0.2 + 0.2 \times \min\!\bigl(\lvert w_i - w_j \rvert / 800,\; 1\bigr)$: same family, different weight, where $w_i, w_j \in \{100, 200, \ldots, 900\}$ are CSS font-weight values and the denominator 800 is the maximum possible weight difference (e.g., 400 vs.\ 500 yields $d = 0.225$; 100 vs.\ 900 yields $d = 0.4$).
     \item $d = 0.7$: different family, same typographic category (e.g., both sans-serif).
     \item $d = 1.0$: different typographic category (e.g., serif vs.\ sans-serif).
 \end{itemize}
@@ -313,21 +313,25 @@ To contextualize the efficiency--accuracy trade-off of our LoRA approach, we com
 \centering
 \caption{Comparison of fine-tuning strategies on DINOv2-Base with 394 font classes. All methods are evaluated at 50 training epochs using the same training data, hyperparameters (where applicable), and evaluation protocol.}
 \label{tab:baselines}
-\begin{tabular}{lrrrr}
+\begin{tabular}{lrr}
 \toprule
-\textbf{Method} & \textbf{Trainable Params} & \textbf{Top-1 Acc} & \textbf{Family Acc} & \textbf{SWER} \\
+\textbf{Method} & \textbf{Trainable Params} & \textbf{Top-1 Acc} \\
 \midrule
-ResNet-50 (CNN)      & 25.6M & 98.8\%  & --  & -- \\
+ResNet-50 (CNN)      & 25.6M & 98.8\% \\
 \midrule
-\multicolumn{5}{l}{\emph{DINOv2-Base backbone:}} \\
-Linear Probe         & 606K  & 36.6\%  & --  & -- \\
-LoRA ($r{=}4$)       & 753K  & 97.9\%  & --  & -- \\
-LoRA ($r{=}8$)       & 900K  & 98.7\%  & --  & -- \\
-LoRA ($r{=}16$)      & 1.2M  & 98.7\%  & --  & -- \\
-Full Fine-Tuning     & 87.2M & 93.4\%  & --  & -- \\
+\multicolumn{3}{l}{\emph{DINOv2-Base backbone:}} \\
+Linear Probe         & 606K  & 36.6\% \\
+LoRA ($r{=}4$)       & 753K  & 97.9\% \\
+LoRA ($r{=}8$)       & 900K  & 98.7\% \\
+LoRA ($r{=}16$)      & 1.2M  & 98.7\% \\
+Full Fine-Tuning     & 87.2M & 93.4\% \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+ResNet-50 achieves 98.8\% accuracy, matching the LoRA configurations despite having 25.6M trainable parameters. This is not surprising: the ResNet-50 baseline is fine-tuned from ImageNet-pretrained weights, so it also benefits from transfer learning rather than training from scratch. LoRA's advantage over ResNet-50 is therefore not raw accuracy but efficiency---LoRA trains 28$\times$ fewer parameters, produces a ${\sim}$3\,MB adapter file versus a ${\sim}$100\,MB full model, and converges faster (reaching 95\% accuracy by epoch 5, whereas ResNet-50 requires substantially more epochs). These differences matter for deployment size, iteration speed, and the ability to maintain a single frozen backbone across multiple fine-tuned tasks.
+
+We attribute full fine-tuning's underperformance (93.4\% at 50 epochs, 95.9\% converged) to overfitting: with all 87.2M parameters trainable, the model has far more capacity than needed for ${\sim}$575 training images per class, leading to degradation of the pretrained features that LoRA preserves by construction.
 
 Figure~\ref{fig:convergence} shows the validation accuracy over training for each method. The LoRA configurations converge rapidly, reaching 95\% accuracy within the first 5 epochs and plateauing near 99\% by epoch 30. Full fine-tuning converges more slowly, requiring approximately 80 epochs to reach its final accuracy of 95.9\%. The linear probe converges quickly but to a much lower ceiling, confirming that the frozen DINOv2 features alone are insufficient for fine-grained font discrimination. These convergence profiles demonstrate that LoRA's parameter efficiency translates directly to faster training convergence, not just fewer trainable parameters.
 
