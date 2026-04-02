@@ -8,6 +8,9 @@
 # Usage:
 #   bash cloud_train.sh --hf_dataset dchen0/font_crops_v5 --hf_results dchen0/font-model-results --mode lora
 #   bash cloud_train.sh --hf_dataset dchen0/font_crops_v5 --hf_results dchen0/font-model-results --mode all --gpu RTX_3090
+# TODO: Upload pre-built Arrow cache to HuggingFace (dataset.save_to_disk())
+# to skip the ~1-2 hour cache rebuild on every launch. Each instance currently
+# re-transforms 225k images from scratch.
 # -----------------------------------------------------------------------
 set -e
 
