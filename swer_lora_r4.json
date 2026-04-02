@@ -1,0 +1,11 @@
+{
+  "n_total": 15727,
+  "n_misclassifications": 293,
+  "mean_misclass_severity": 0.5363481228668943,
+  "swer": 0.009992369809881097,
+  "random_baseline": 0.7777867247288001,
+  "relative_severity": 0.012847184828675563,
+  "top1_accuracy": 0.9813696191263432,
+  "family_accuracy": 0.9885547148216443,
+  "severity_weighted_accuracy": 0.990007630190119
+}
