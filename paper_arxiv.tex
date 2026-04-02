@@ -313,18 +313,18 @@ To contextualize the efficiency--accuracy trade-off of our LoRA approach, we com
 \centering
 \caption{Comparison of fine-tuning strategies on DINOv2-Base with 394 font classes. All methods are evaluated at 50 training epochs using the same training data, hyperparameters (where applicable), and evaluation protocol.}
 \label{tab:baselines}
-\begin{tabular}{lrrr}
+\begin{tabular}{lrrrr}
 \toprule
-\textbf{Method} & \textbf{Trainable Params} & \textbf{Top-1 Acc} & \textbf{95\% CI} \\
+\textbf{Method} & \textbf{Trainable Params} & \textbf{Top-1 Acc} & \textbf{95\% CI} & \textbf{SWER $\Pi$} \\
 \midrule
-ResNet-50 (CNN)      & 25.6M & 98.8\% & $\pm$0.17\% \\
+ResNet-50 (CNN)      & 25.6M & 98.8\% & $\pm$0.17\% & 0.005 \\
 \midrule
-\multicolumn{4}{l}{\emph{DINOv2-Base backbone:}} \\
-Linear Probe         & 606K  & 36.6\% & $\pm$0.75\% \\
-LoRA ($r{=}4$)       & 753K  & 97.9\% & $\pm$0.21\% \\
-LoRA ($r{=}8$)       & 900K  & 98.7\% & $\pm$0.16\% \\
-LoRA ($r{=}16$)      & 1.2M  & 98.7\% & $\pm$0.16\% \\
-Full Fine-Tuning     & 87.2M & 93.4\% & $\pm$0.31\% \\
+\multicolumn{5}{l}{\emph{DINOv2-Base backbone:}} \\
+Linear Probe         & 606K  & 36.6\% & $\pm$0.75\% & 0.479 \\
+LoRA ($r{=}4$)       & 753K  & 97.9\% & $\pm$0.21\% & 0.013 \\
+LoRA ($r{=}8$)       & 900K  & 98.7\% & $\pm$0.16\% & 0.007 \\
+LoRA ($r{=}16$)      & 1.2M  & 98.7\% & $\pm$0.16\% & 0.007 \\
+Full Fine-Tuning     & 87.2M & 93.4\% & $\pm$0.31\% & 0.028 \\
 \bottomrule
 \end{tabular}
 \end{table}

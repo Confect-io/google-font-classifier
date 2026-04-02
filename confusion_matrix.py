@@ -106,7 +106,25 @@ def load_model(model_name, data_dir=None):
         model = Dinov2ForImageClassification.from_pretrained(
             model_name, ignore_mismatched_sizes=True,
         )
-        processor = AutoImageProcessor.from_pretrained(model_name)
+        try:
+            processor = AutoImageProcessor.from_pretrained(model_name)
+        except OSError:
+            # Local model directory may not have preprocessor_config.json
+            processor = AutoImageProcessor.from_pretrained("facebook/dinov2-base-imagenet1k-1-layer")
+
+        # Set label mapping from data_dir if labels are generic
+        if data_dir and hasattr(model.config, 'id2label') and all(
+            v.startswith('LABEL_') for v in model.config.id2label.values()
+        ):
+            all_dirs = sorted(os.listdir(os.path.join(data_dir, "train")))
+            real_dirs = [d for d in all_dirs if not d.startswith('.')]
+            num_model_labels = model.config.num_labels
+            if num_model_labels != len(real_dirs):
+                id2label = {i: name for i, name in enumerate(all_dirs)}
+            else:
+                id2label = {i: name for i, name in enumerate(real_dirs)}
+            model.config.id2label = id2label
+            model.config.label2id = {v: k for k, v in id2label.items()}
 
     model.eval()
     size = processor.size["shortest_edge"]
@@ -660,10 +678,20 @@ def main():
     model, transform = load_model(args.model, data_dir=args.data_dir)
     model.to(device)
 
+    # --- Normalize model labels (strip macOS ._* prefixes from training bug) ---
+    if any(v.startswith('._') for v in model.config.id2label.values()):
+        normalized = {}
+        for idx, label in model.config.id2label.items():
+            clean = label.lstrip('._') if label.startswith('._') else label
+            normalized[idx] = clean
+        model.config.id2label = normalized
+        model.config.label2id = {v: k for k, v in normalized.items()}
+        print(f"  Normalized {sum(1 for v in normalized.values() if v != label)} model labels (stripped ._* prefix)")
+
     # --- Sanity check: verify test labels match model labels ---
     model_labels = set(model.config.id2label.values())
     dir_labels_set = set(
-        d for d in os.listdir(test_dir) if os.path.isdir(os.path.join(test_dir, d))
+        d for d in os.listdir(test_dir) if os.path.isdir(os.path.join(test_dir, d)) and not d.startswith('.')
     )
     only_in_test = dir_labels_set - model_labels
     only_in_model = model_labels - dir_labels_set
