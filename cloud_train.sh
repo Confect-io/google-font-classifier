@@ -118,6 +118,14 @@ if [ "$PARALLEL" = "true" ] && [ "$MODE" = "all" ]; then
     exit 0
 fi
 
+# Clean up any exited instances (they still incur disk storage charges)
+vastai show instances --raw 2>/dev/null | python3 -c "
+import json, sys
+for i in json.load(sys.stdin):
+    if i['actual_status'] == 'exited':
+        print(i['id'])
+" 2>/dev/null | while read id; do vastai destroy instance "$id" 2>/dev/null; done
+
 # Check vastai CLI is installed
 if ! command -v vastai &> /dev/null; then
     echo "Error: vastai CLI not found. Install with: pip install vastai"
