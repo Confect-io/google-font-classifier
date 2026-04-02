@@ -335,6 +335,8 @@ We attribute full fine-tuning's underperformance (93.4\% at 50 epochs, 95.9\% co
 
 Figure~\ref{fig:convergence} shows the validation accuracy over training for each method. The LoRA configurations converge rapidly, reaching 95\% accuracy within the first 5 epochs and plateauing near 99\% by epoch 30. Full fine-tuning converges more slowly, requiring approximately 80 epochs to reach its final accuracy of 95.9\%. The linear probe converges quickly but to a much lower ceiling, confirming that the frozen DINOv2 features alone are insufficient for fine-grained font discrimination. These convergence profiles demonstrate that LoRA's parameter efficiency translates directly to faster training convergence, not just fewer trainable parameters.
 
+The SWER column in Table~\ref{tab:baselines} reveals a qualitative dimension beyond accuracy. The linear probe's $\Pi = 0.479$ indicates that its errors are nearly half as severe as random guessing---frozen DINOv2 features fail not just frequently but categorically, confusing fonts across typographic categories (e.g., serif with sans-serif). In contrast, LoRA's errors ($\Pi \approx 0.007$) are overwhelmingly within-family weight confusions, which are typographically benign. Full fine-tuning's errors ($\Pi = 0.028$) are 4$\times$ more severe than LoRA's, consistent with the overfitting hypothesis: degraded features produce less typographically coherent predictions.
+
 \begin{figure}[t]
     \centering
     \includegraphics[width=\textwidth]{figures/convergence_curves.pdf}
