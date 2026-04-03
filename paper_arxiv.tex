@@ -49,7 +49,7 @@
 
 % ---- Abstract ----
 \begin{abstract}
-We present a font classification system capable of identifying 394 font variants across 32 families from rendered text images. Our approach fine-tunes a DINOv2 Vision Transformer using Low-Rank Adaptation (LoRA), achieving 99.0\% top-1 accuracy while training roughly 1\% of the model's 87.2M parameters. We introduce a synthetic dataset generation pipeline that renders Google Fonts at scale with diverse augmentations including randomized colors, alignment, line wrapping, and Gaussian noise, producing training images that generalize to real-world typographic samples. The model incorporates built-in preprocessing to ensure consistency between training and inference, and is deployed as a HuggingFace Inference Endpoint. We release the model, dataset, and full training pipeline as open-source resources.
+We introduce GoogleFontsBench, the first public benchmark for classifying open-source web fonts, addressing a gap left by existing benchmarks that cover only commercial typefaces. GoogleFontsBench comprises 394 font variants across 32 Google Fonts families, a reproducible synthetic data generation pipeline, and a typographically-grounded evaluation metric (SWER) that weights errors by visual severity. We establish baselines using six fine-tuning strategies on a DINOv2 Vision Transformer backbone. Parameter-efficient adaptation with LoRA achieves 99.0\% top-1 accuracy while training only 1\% of the model's 87.2M parameters, with errors 140$\times$ less severe than random guessing. We release the benchmark, all trained models, and the full training pipeline as open-source resources.
 \end{abstract}
 
 % ---- 1. Introduction ----
@@ -59,13 +59,16 @@ Font identification is a practical problem encountered across graphic design, do
 
 Prior approaches to font recognition have relied on hand-crafted features such as stroke width, serif detection, and character-level shape descriptors \citep{zramdini1998optical}. More recent methods leverage convolutional neural networks trained on synthetic font images \citep{wang2015deepfont}. However, these systems often struggle with large label spaces, subtle inter-class differences (e.g., weight variants of the same family), and the domain gap between synthetic training data and real-world images.
 
-In this work, we take advantage of recent advances in self-supervised visual representation learning to address these challenges. Specifically, we fine-tune DINOv2 \citep{oquab2024dinov2}, a Vision Transformer pre-trained with self-distillation on a large curated image dataset, using Low-Rank Adaptation (LoRA) \citep{hu2022lora}. This parameter-efficient strategy allows us to adapt a powerful general-purpose vision backbone to the font classification domain while training only a small fraction of the total parameters.
+Existing font recognition benchmarks such as AdobeVFR \citep{wang2015deepfont} focus almost exclusively on commercial typefaces. No public benchmark covers the open-source fonts that dominate modern web and mobile design---Google Fonts alone powers over 70 billion monthly font views. This gap leaves practitioners without a standardized way to evaluate font classification systems for the fonts they actually encounter.
+
+In this work, we address both the benchmark gap and the classification task. We introduce \textbf{GoogleFontsBench}, a public benchmark for open-source font classification comprising 394 font variants across 32 families, a reproducible synthetic data generation pipeline, and a typographically-grounded evaluation protocol. We establish baselines on this benchmark using six fine-tuning strategies, finding that parameter-efficient adaptation of DINOv2 \citep{oquab2024dinov2} with LoRA \citep{hu2022lora} achieves the strongest efficiency--accuracy trade-off.
 
 Our contributions are as follows:
 \begin{enumerate}[leftmargin=*]
-    \item A parameter-efficient fine-tuning approach for font classification that adapts DINOv2 with LoRA, achieving 99.0\% top-1 accuracy across 394 font classes.
-    \item A scalable synthetic dataset generation pipeline that renders Google Fonts with diverse augmentations to produce training data robust to visual variation.
-    \item An end-to-end system with built-in preprocessing that ensures consistency between training and deployment, released as an open-source model and dataset on HuggingFace.
+    \item \textbf{GoogleFontsBench}: the first public font classification benchmark for open-source web fonts, with 394 classes, ${\sim}$225K training images, and a standardized evaluation protocol including a typographic-distance-based severity metric (SWER).
+    \item Baseline results from six fine-tuning strategies (linear probe, LoRA at three ranks, full fine-tuning, and ResNet-50), establishing reference points for future work.
+    \item A parameter-efficient approach using LoRA on DINOv2 that achieves 99.0\% top-1 accuracy while training only 1\% of parameters, with errors 140$\times$ less severe than random guessing as measured by SWER.
+    \item An end-to-end system with built-in preprocessing that ensures consistency between training and deployment, released as open-source on HuggingFace.
 \end{enumerate}
 
 This model is deployed as a component of a production design tool.\footnote{\url{https://anything.com}}
@@ -375,7 +378,7 @@ The trained model is released on HuggingFace Hub as \texttt{dchen0/font\_classif
 % ---- 9. Conclusion ----
 \section{Conclusion}
 
-We have presented a font classification system that identifies 394 font variants with 99.0\% accuracy by fine-tuning a DINOv2 Vision Transformer with LoRA. The approach is parameter-efficient, training roughly 1\% of model parameters, and is supported by a reproducible synthetic data generation pipeline. The model, dataset, and code are publicly available to support further research in document analysis and typographic recognition.\footnote{Source code: \url{https://github.com/Create-Inc/font-model}}
+We have introduced GoogleFontsBench, a public benchmark for open-source font classification that fills a gap in existing evaluation resources dominated by commercial typefaces. On this benchmark, LoRA-adapted DINOv2 achieves 99.0\% top-1 accuracy while training only 1\% of parameters, with typographically mild errors ($\Pi = 0.007$). The benchmark, baseline results from six methods, evaluation protocol, and full training pipeline are publicly available to support further research in font recognition and fine-grained visual classification.\footnote{Source code: \url{https://github.com/Create-Inc/font-model}}
 
 % ---- Acknowledgments ----
 \section*{Acknowledgments}
