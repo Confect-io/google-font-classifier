@@ -347,7 +347,7 @@ The SWER column in Table~\ref{tab:baselines} reveals a qualitative dimension bey
 \begin{figure}[t]
     \centering
     \includegraphics[width=\textwidth]{figures/overfitting_analysis.pdf}
-    \caption{Left: training and validation loss for LoRA $r{=}8$ and full fine-tuning. Right: generalization gap (validation loss minus smoothed training loss). Full fine-tuning exhibits a widening gap indicative of overfitting, while LoRA maintains a narrow gap throughout training.}
+    \caption{Left: training and validation loss for LoRA $r{=}8$ and full fine-tuning. Right: generalization gap (validation loss minus smoothed training loss). Full fine-tuning exhibits a widening gap indicative of overfitting, while LoRA maintains a narrow gap throughout training. The briefly negative gap early in LoRA training is expected: dropout is active during training but disabled during evaluation, so validation loss can temporarily fall below training loss.}
     \label{fig:overfitting}
 \end{figure}
 
