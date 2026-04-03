@@ -353,7 +353,9 @@ The SWER column in Table~\ref{tab:baselines} reveals a qualitative dimension bey
 
 \subsection{Generalization to Real-World Images}
 
-While our model is trained entirely on synthetically rendered text, practical deployment requires robustness to real-world typography encountered in screenshots, photographs of signage, and web page captures. We are assembling a manually collected evaluation set of web typography images spanning diverse fonts, backgrounds, and capture conditions. Results on this real-world benchmark will be reported in a future revision.
+Our model is trained and evaluated entirely on synthetically rendered text. The most established real-world font recognition benchmark, AdobeVFR \citep{wang2015deepfont}, contains 4,384 expert-labeled images spanning 617 font classes---however, these are drawn almost exclusively from commercial typefaces (Adobe Type Library, Linotype, Monotype), with zero overlap with our 32 Google Fonts families. Direct comparison is therefore not possible without retraining on a shared label space.
+
+This highlights a gap in the font recognition literature: no public real-world benchmark exists for the open-source fonts that dominate modern web and mobile design. We are assembling a manually curated evaluation set of web typography screenshots for our target fonts, leveraging the fact that Google Fonts usage metadata identifies which websites use each family. Results on this real-world benchmark will be reported in a future revision. We note that our model is deployed in a production design tool and performs well on web screenshots in practice, though we refrain from reporting anecdotal production metrics as a substitute for controlled evaluation.
 
 
 % ---- 7. Deployment ----
