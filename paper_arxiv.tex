@@ -49,7 +49,7 @@
 
 % ---- Abstract ----
 \begin{abstract}
-We introduce GoogleFontsBench, the first public benchmark for classifying open-source web fonts, addressing a gap left by existing benchmarks that cover only commercial typefaces. GoogleFontsBench comprises 394 font variants across 32 Google Fonts families, a reproducible synthetic data generation pipeline, and a typographically-grounded evaluation metric (SWER) that weights errors by visual severity. We establish baselines using six fine-tuning strategies on a DINOv2 Vision Transformer backbone. Parameter-efficient adaptation with LoRA achieves 99.0\% top-1 accuracy while training only 1\% of the model's 87.2M parameters, with errors 140$\times$ less severe than random guessing. We release the benchmark, all trained models, and the full training pipeline as open-source resources.
+We introduce GoogleFontsBench, the first public benchmark for classifying open-source web fonts, addressing a gap left by existing benchmarks that cover only commercial typefaces. GoogleFontsBench comprises 394 font variants across 32 Google Fonts families, a reproducible synthetic data generation pipeline (${\sim}$575 images per variant, ${\sim}$226K total), and a typographically-grounded evaluation metric (SWER) that weights errors by visual severity. We establish baselines using six fine-tuning strategies on a DINOv2 Vision Transformer backbone. Parameter-efficient adaptation with LoRA achieves 99.0\% top-1 accuracy while training only 1\% of the model's 87.2M parameters, with errors 140$\times$ less severe than random guessing. We release the benchmark, all trained models, and the full training pipeline as open-source resources.
 \end{abstract}
 
 % ---- 1. Introduction ----
@@ -318,7 +318,7 @@ To contextualize the efficiency--accuracy trade-off of our LoRA approach, we com
 \label{tab:baselines}
 \begin{tabular}{lrrrr}
 \toprule
-\textbf{Method} & \textbf{Trainable Params} & \textbf{Top-1 Acc} & \textbf{95\% CI} & \textbf{SWER $\Pi$} \\
+\textbf{Method} & \textbf{Trainable Params} & \textbf{Top-1 Acc} & \textbf{95\% CI} & \textbf{$\Pi$} \\
 \midrule
 ResNet-50 (CNN)      & 25.6M & 98.8\% & $\pm$0.17\% & 0.005 \\
 \midrule
