@@ -2,6 +2,22 @@
 
 A font classification system that identifies 394 font variants across 32 families from rendered text images, using LoRA fine-tuning of DINOv2. Achieves 98.9% top-1 validation accuracy with only ~1% of parameters trainable.
 
+## Citation
+
+If you use GoogleFontsBench, the training pipeline, or the pretrained models in your work, please cite the arXiv preprint:
+
+```bibtex
+@article{chen2025googlefontsbench,
+  title   = {Parameter-Efficient Fine-Tuning of DINOv2 for Large-Scale Font Classification},
+  author  = {Chen, Daniel and Lowe, Marcus and Zinn, Zaria},
+  journal = {arXiv preprint},
+  year    = {2025},
+  note    = {GoogleFontsBench benchmark and DINOv2 font classification baselines}
+}
+```
+
+If an arXiv identifier is available, add it to the BibTeX entry as `eprint`, `archivePrefix`, and `primaryClass`.
+
 ## Quick Start
 
 ```bash
