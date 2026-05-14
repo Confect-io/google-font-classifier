@@ -7,16 +7,16 @@ A font classification system that identifies 394 font variants across 32 familie
 If you use GoogleFontsBench, the training pipeline, or the pretrained models in your work, please cite the arXiv preprint:
 
 ```bibtex
-@article{chen2025googlefontsbench,
-  title   = {Parameter-Efficient Fine-Tuning of DINOv2 for Large-Scale Font Classification},
-  author  = {Chen, Daniel and Lowe, Marcus and Zinn, Zaria},
-  journal = {arXiv preprint},
-  year    = {2025},
-  note    = {GoogleFontsBench benchmark and DINOv2 font classification baselines}
+@misc{chen2026parameterefficientfinetuningdinov2largescale,
+  title         = {Parameter-Efficient Fine-Tuning of DINOv2 for Large-Scale Font Classification},
+  author        = {Daniel Chen and Zaria Zinn and Marcus Lowe},
+  year          = {2026},
+  eprint        = {2602.13889},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.CV},
+  url           = {https://arxiv.org/abs/2602.13889}
 }
 ```
-
-If an arXiv identifier is available, add it to the BibTeX entry as `eprint`, `archivePrefix`, and `primaryClass`.
 
 ## Quick Start
 
