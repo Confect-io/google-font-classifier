@@ -613,8 +613,13 @@ print(f'{host} {port}')
     echo "$ATTEMPT_SCRIPT" | ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -p "$SSH_PORT" "root@$SSH_HOST" "cat > /workspace/run_training.sh && chmod +x /workspace/run_training.sh"
 
     log "==> Launching training in background..."
+    # `< /dev/null` so the SSH session doesn't keep stdin tied to the
+    # backgrounded process; `|| true` so transient SSH disconnects
+    # (Vast occasionally drops the connection right after the nohup &)
+    # don't kill the local script via `set -e` — the 3-minute health
+    # check below confirms whether training actually started.
     ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -p "$SSH_PORT" "root@$SSH_HOST" \
-        "nohup bash /workspace/run_training.sh > /workspace/training.log 2>&1 &"
+        "nohup bash /workspace/run_training.sh > /workspace/training.log 2>&1 < /dev/null &" || true
 
     # Wait 3 minutes, then check if the script is still running
     # (allows time for connectivity retries + pip install)
