@@ -22,3 +22,9 @@ myEnv/
 test_dataset_dry_run/
 cloud_results/
 cloud_train_*.log
+
+# Confect: generated outputs (regenerable via curate_fonts.py / dataset_generator.py)
+fonts/
+data/
+data_smoke/
+*.tar
