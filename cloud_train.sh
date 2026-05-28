@@ -205,6 +205,14 @@ else:
 trap 'echo "SCRIPT CRASHED at line $LINENO (exit code $?)"; upload_log' ERR
 trap 'echo "SCRIPT KILLED BY SIGNAL (SIGTERM/SIGHUP) at $(date)"; upload_log; exit 143' SIGTERM SIGHUP
 
+# Confect: install the vastai CLI early so the end-of-training destroy
+# uses the same CLI we run locally. The bare curl path silently failed
+# in dry-runs and left zombie instances.
+echo "==> Installing vastai CLI for auto-destroy..."
+pip install -q vastai >/dev/null 2>&1 || true
+mkdir -p /root/.config/vastai
+echo "__VAST_API_KEY__" > /root/.config/vastai/vast_api_key
+
 HF_DATASET="__HF_DATASET__"
 MODE="__MODE__"
 BATCH_SIZE=__BATCH_SIZE__
@@ -459,15 +467,11 @@ fi
 # Upload training log (always, even if training failed)
 upload_log
 
-# Self-destruct: destroy this instance via Vast.ai API
+# Self-destruct: destroy this instance via the vastai CLI. The CLI
+# uses the same API key the local machine uses; the prior raw-curl
+# path silently failed in dry-runs and left zombie instances.
 echo "==> Auto-destroying instance __INSTANCE_ID__..."
-curl -s -X PUT "https://console.vast.ai/api/v0/instances/__INSTANCE_ID__/" \
-    -H "Authorization: Bearer __VAST_API_KEY__" \
-    -H "Content-Type: application/json" \
-    -d '{"state": "stopped"}' || true
-curl -s -X DELETE "https://console.vast.ai/api/v0/instances/__INSTANCE_ID__/" \
-    -H "Authorization: Bearer __VAST_API_KEY__" || true
-echo "==> Instance destroyed."
+vastai destroy instance __INSTANCE_ID__ 2>&1 || true
 echo "==> SCRIPT COMPLETED SUCCESSFULLY at $(date)"
 TRAINING_SCRIPT
 )
