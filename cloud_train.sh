@@ -124,7 +124,7 @@ import json, sys
 for i in json.load(sys.stdin):
     if i['actual_status'] == 'exited':
         print(i['id'])
-" 2>/dev/null | while read id; do vastai destroy instance "$id" 2>/dev/null; done
+" 2>/dev/null | while read id; do vastai destroy instance "$id" -y 2>/dev/null; done
 
 # Check vastai CLI is installed
 if ! command -v vastai &> /dev/null; then
@@ -569,7 +569,7 @@ print(data.get('actual_status', 'unknown'))
 
     if [ "$STARTED" = "false" ]; then
         log "==> Instance failed to start. Destroying and retrying..."
-        vastai destroy instance "$INSTANCE_ID" 2>/dev/null || true
+        vastai destroy instance "$INSTANCE_ID" -y 2>/dev/null || true
         continue
     fi
 
@@ -600,7 +600,7 @@ print(f'{host} {port}')
 
     if [ "$SSH_OK" = "false" ]; then
         log "==> SSH never came up. Destroying and retrying..."
-        vastai destroy instance "$INSTANCE_ID" 2>/dev/null || true
+        vastai destroy instance "$INSTANCE_ID" -y 2>/dev/null || true
         continue
     fi
 
@@ -650,7 +650,7 @@ print(f'{host} {port}')
             "cat /workspace/training.log" 2>/dev/null | tee -a "$LOG_FILE" || true
         log "--- End remote log ---"
         log "==> Destroying and retrying..."
-        vastai destroy instance "$INSTANCE_ID" 2>/dev/null || true
+        vastai destroy instance "$INSTANCE_ID" -y 2>/dev/null || true
         continue
     fi
 done
