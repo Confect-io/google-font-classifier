@@ -24,7 +24,8 @@ usage, because we don't have a reliable signal for the latter.
 |---|---|---|
 | `curate_fonts.py` | New script | Pulls popularity-sorted Google Fonts metadata, extracts specific weight instances from variable fonts via fontTools, writes static `.ttf` files into `./fonts/`. Replaces the manual font-curation step in upstream's README. |
 | `dataset_generator.py:24` | `FONT_ALLOWLIST` replaced | Was 32 hardcoded families. Now holds the 147 family stems produced by `curate_fonts.py`. |
-| `cloud_train.sh` | Remote destroy switched from raw `curl` to `vastai` CLI | The bare `curl -X DELETE` against Vast's REST API silently failed in our dry-runs, leaving zombie instances billing. The CLI uses the same API key file the local machine does, and is what successfully destroyed our orphan. The remote script now installs the `vastai` CLI before training and calls `vastai destroy instance` at the end. |
+| `cloud_train.sh` | Remote destroy switched from raw `curl` to `vastai destroy instance -y` | The bare `curl -X DELETE` against Vast's REST API silently failed in our dry-runs, leaving zombie instances billing. The CLI works against the same API key file; `-y` is required because without a TTY the interactive `[y/N]` prompt defaults to "no" and the destroy aborts silently. The remote script installs the CLI before training and calls `vastai destroy instance ID -y` at the end. |
+| `cloud_train.sh` (`run_training`) | Strip `--linear_probe` / `--resnet_baseline` / `--full_finetune` from `$extra_flags` when resuming | `train_model.py` rejects those flags combined with `--checkpoint` as mutually exclusive. Without the strip, every baseline run crashes immediately when the script finds an existing checkpoint in the HF results repo and tries to resume. |
 
 Nothing else is patched. The repo's `dataset_generator.py` filter and
 `train_model.py` flow are untouched.

@@ -387,6 +387,12 @@ run_training() {
     if [ -n "$latest_ckpt" ]; then
         echo "==> Resuming from checkpoint: $latest_ckpt"
         checkpoint_arg="--checkpoint $latest_ckpt"
+        # train_model.py treats --checkpoint as mutually exclusive with
+        # --linear_probe / --resnet_baseline / --full_finetune (the
+        # checkpoint already encodes which mode was trained). Strip
+        # those flags from extra_flags when resuming, or every resumed
+        # baseline run crashes before any training happens.
+        extra_flags=$(echo "$extra_flags" | sed -E 's/--(linear_probe|resnet_baseline|full_finetune)//g')
     fi
 
     echo ""
@@ -469,9 +475,11 @@ upload_log
 
 # Self-destruct: destroy this instance via the vastai CLI. The CLI
 # uses the same API key the local machine uses; the prior raw-curl
-# path silently failed in dry-runs and left zombie instances.
+# path silently failed in dry-runs and left zombie instances. The `-y`
+# flag skips the [y/N] confirmation that otherwise defaults to "no"
+# when there's no TTY and silently aborts the destroy.
 echo "==> Auto-destroying instance __INSTANCE_ID__..."
-vastai destroy instance __INSTANCE_ID__ 2>&1 || true
+vastai destroy instance __INSTANCE_ID__ -y 2>&1 || true
 echo "==> SCRIPT COMPLETED SUCCESSFULLY at $(date)"
 TRAINING_SCRIPT
 )
