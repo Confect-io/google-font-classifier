@@ -128,11 +128,24 @@ def load_checkpoint_with_size_mismatch_handling(base_model, checkpoint_path, pef
 def get_transform(processor: AutoImageProcessor, size: int):
     aug = get_inference_transform(processor, size)
 
-    def transform(example):
-        # Apply the same pad-to-square + resize + normalize pipeline used at inference
-        # (defined in handler.py) to ensure no train/serve skew.
-        example["pixel_values"] = aug(example["image"])
-        return example
+    def transform(batch):
+        # Applied lazily by set_transform, so this receives a BATCH (each
+        # column a list) rather than one example, and is called on __getitem__
+        # instead of once up front.
+        #
+        # This used to be a `.map()`, which materialised every transformed
+        # image into an Arrow cache: 3x224x224 float32 = 602 KB per image, so
+        # ~92 GB for v5's 163k images and ~150 GB at 252k — rebuilt on every
+        # instance launch, ~25 min for v5 and ~38 min at the new size.
+        # set_transform costs a little CPU per batch instead, which overlaps
+        # with GPU compute under dataloader_num_workers.
+        #
+        # Same pad-to-square + resize + normalize pipeline as inference
+        # (handler.py), so there is still no train/serve skew.
+        return {
+            "pixel_values": [aug(img) for img in batch["image"]],
+            "label": batch["label"],
+        }
 
     return transform
 
@@ -188,23 +201,17 @@ if __name__ == "__main__":
 
         transform = get_transform(processor, size)
 
-        logger.info("Applying data transformations")
-        train_dataset = dataset["train"].map(
-            transform,
-            remove_columns=["image"],
-            desc="Transforming training data"
-        )
-        test_dataset = dataset["test"].map(
-            transform,
-            remove_columns=["image"],
-            desc="Transforming test data"
-        )
-        
-        # Set the format to torch tensors
-        train_dataset.set_format(type="torch", columns=["pixel_values", "label"])
-        test_dataset.set_format(type="torch", columns=["pixel_values", "label"])
-        
-        logger.info("Data preprocessing complete")
+        logger.info("Attaching lazy transform (no Arrow cache build)")
+        train_dataset = dataset["train"]
+        test_dataset = dataset["test"]
+        # set_transform, not map: nothing is precomputed or written to disk, so
+        # there is no multi-GB cache to rebuild on every instance launch. The
+        # transform returns torch tensors directly, so set_format is not needed
+        # (and would undo the transform's output).
+        train_dataset.set_transform(transform)
+        test_dataset.set_transform(transform)
+
+        logger.info("Data pipeline ready")
 
     if args.resnet_baseline:
         from torchvision.models import resnet50, ResNet50_Weights

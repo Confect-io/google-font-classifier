@@ -14,6 +14,10 @@
 # -----------------------------------------------------------------------
 set -e
 
+# Where this script lives — used to find the code overrides we ship to the GPU
+# box. Resolved from $0 so it works regardless of the caller's cwd.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
 HF_DATASET=""
 HF_RESULTS=""
 MODE=""
@@ -263,6 +267,16 @@ if [ ! -d "font-model" ]; then
     git clone https://github.com/Create-Inc/font-model.git
 fi
 cd font-model
+
+# Confect's changes to train_model.py / handler.py are scp'd to
+# /workspace/overrides by the launcher and copied over the upstream clone
+# here. We do this instead of cloning Confect-io/google-font-classifier
+# because that repo is private, and this avoids putting a GitHub credential
+# on a rented box. Without it, local edits to train_model.py never run.
+if [ -d /workspace/overrides ] && [ -n "$(ls -A /workspace/overrides 2>/dev/null)" ]; then
+    echo "==> Applying local overrides: $(ls /workspace/overrides | tr '\n' ' ')"
+    cp /workspace/overrides/*.py . || true
+fi
 
 echo "==> Downloading dataset from HuggingFace: $HF_DATASET"
 for _dl_try in 1 2 3 4 5; do
@@ -611,6 +625,21 @@ print(f'{host} {port}')
     # Upload and launch training
     log "==> Uploading training script..."
     echo "$ATTEMPT_SCRIPT" | ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -p "$SSH_PORT" "root@$SSH_HOST" "cat > /workspace/run_training.sh && chmod +x /workspace/run_training.sh"
+
+    # Ship our versions of the training code. The remote script clones
+    # upstream Create-Inc/font-model, so without this step every local edit to
+    # train_model.py or handler.py is silently ignored on the GPU box.
+    OVERRIDES=""
+    for f in train_model.py handler.py; do
+        [ -f "$SCRIPT_DIR/$f" ] && OVERRIDES="$OVERRIDES $SCRIPT_DIR/$f"
+    done
+    if [ -n "$OVERRIDES" ]; then
+        log "==> Uploading code overrides:$(echo "$OVERRIDES" | xargs -n1 basename | tr '\n' ' ')"
+        ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -p "$SSH_PORT" "root@$SSH_HOST" \
+            "mkdir -p /workspace/overrides"
+        scp -i "$SSH_KEY" -o StrictHostKeyChecking=no -P "$SSH_PORT" \
+            $OVERRIDES "root@$SSH_HOST:/workspace/overrides/"
+    fi
 
     log "==> Launching training in background..."
     # `< /dev/null` so the SSH session doesn't keep stdin tied to the

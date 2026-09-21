@@ -59,10 +59,43 @@ public dataset/model repos.
 
 ## Bash version gotcha
 
-`cloud_train.sh` uses bash 4+ features. macOS ships bash 3.2 at
-`/bin/bash`, which silently fails partway through. **Always invoke as
-`./cloud_train.sh ...`** so the script's `#!/usr/bin/env bash` shebang
-picks up Homebrew's bash (5+) from PATH. Don't prefix with `bash`.
+`cloud_train.sh` needs bash 4+. macOS ships bash 3.2 at `/bin/bash`,
+which cannot even PARSE the script (syntax error at the `case "$MODE"`
+block, ~line 431).
+
+**Invoke it as `/opt/homebrew/bin/bash cloud_train.sh ...`** — the full
+path, explicitly.
+
+An earlier version of this note said to run `./cloud_train.sh` and let the
+`#!/usr/bin/env bash` shebang find Homebrew's bash on PATH. That is WRONG on
+this machine: `/bin` precedes `/opt/homebrew/bin` in PATH (in both the login
+shell and non-interactive shells), so `env bash` resolves to 3.2 — exactly
+the version the warning is about. Verify with:
+
+    /usr/bin/env bash --version    # 3.2.57 here, not 5.x
+
+## Dry runs give a false negative
+
+`cloud_train.sh` launches training, sleeps 180s, then SSHes in and checks the
+job is still alive. If it is not, the script assumes the job died, destroys
+the instance and retries — up to 5 times.
+
+A dry run (39 images, 1 epoch) **finishes in ~90 seconds** and the remote
+script self-destructs the instance on success. The health check then finds a
+dead host and misreads that success as failure, renting four more instances
+for nothing.
+
+So: when a dry run looks stuck at "Waiting 3 minutes to verify instance is
+healthy", check HuggingFace rather than the local log —
+
+    logs/lora16_<timestamp>.log and <mode>/result_model/ in --hf_results
+
+If those are there, it worked; kill the local script (`pkill -f
+cloud_train.sh`) before it starts retrying, and confirm with
+`vastai show instances` that nothing is left billing.
+
+Real runs are unaffected: at 153 classes the Arrow cache build alone takes
+~2 hours, so the job is always alive at the 3-minute mark.
 
 ## End-to-end retrain workflow
 
