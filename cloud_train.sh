@@ -655,9 +655,27 @@ print(f'{host} {port}')
     log "==> Waiting 3 minutes to verify instance is healthy..."
     sleep 180
 
-    HEALTH_EXIT=0
-    ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 -p "$SSH_PORT" "root@$SSH_HOST" \
-        "pgrep -f run_training.sh > /dev/null" 2>/dev/null || HEALTH_EXIT=$?
+    # Probe whether training is still alive, distinguishing two very different
+    # failures that this check used to conflate:
+    #
+    #   exit 1   pgrep ran and found no process — the job really did die.
+    #   exit 255 ssh could not connect at all — says nothing about the job.
+    #
+    # On 2026-09-21 a healthy instance mid-tar-extraction returned 255 for one
+    # probe and was destroyed, throwing away a 5.4 GB download. Transport
+    # errors now get retried instead of being read as death.
+    HEALTH_EXIT=255
+    for _probe in 1 2 3 4 5; do
+        PROBE_EXIT=0
+        ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=20 -p "$SSH_PORT" "root@$SSH_HOST" \
+            "pgrep -f run_training.sh > /dev/null" 2>/dev/null || PROBE_EXIT=$?
+        if [ "$PROBE_EXIT" -eq 0 ] || [ "$PROBE_EXIT" -eq 1 ]; then
+            HEALTH_EXIT=$PROBE_EXIT   # a real answer from the box
+            break
+        fi
+        log "  health probe $_probe/5: ssh unreachable (exit $PROBE_EXIT), retrying in 30s..."
+        sleep 30
+    done
 
     if [ "$HEALTH_EXIT" -eq 0 ]; then
         # Grab the remote log so far for the local log

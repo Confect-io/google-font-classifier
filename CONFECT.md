@@ -74,6 +74,18 @@ the version the warning is about. Verify with:
 
     /usr/bin/env bash --version    # 3.2.57 here, not 5.x
 
+## Never edit cloud_train.sh while a run is in flight
+
+Bash reads a script incrementally by byte offset, so inserting or removing
+lines in a running script can make it execute garbage from a stale position.
+Wait for the launcher to exit (it exits as soon as the health check passes),
+or copy it aside and edit the copy.
+
+Note the launcher and the training job are independent: the remote script is
+`nohup`-ed, so `pkill -f cloud_train.sh` stops the launcher WITHOUT stopping
+training. That is the move when the launcher is misbehaving — it also stops
+it destroying a healthy instance on a bad probe.
+
 ## Dry runs give a false negative
 
 `cloud_train.sh` launches training, sleeps 180s, then SSHes in and checks the
