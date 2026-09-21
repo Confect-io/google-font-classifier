@@ -245,7 +245,26 @@ fi
 echo "==> Installing dependencies"
 # Pin torch to 2.6.x to satisfy transformers >=2.6 requirement while staying compatible with CUDA 12.x drivers
 pip install -q "torch>=2.6,<2.7" "torchvision>=0.21,<0.22" --index-url https://download.pytorch.org/whl/cu124
+
+# Vast's pytorch images ship torchaudio compiled against THEIR torch (often
+# 2.5.1). Upgrading torch to 2.6 above breaks its C++ ABI:
+#   OSError: libtorchaudio.so: undefined symbol: _ZN2at4_ops9fft_irfft4call...
+# transformers imports torchaudio lazily via audio_utils, so this does not
+# fail at install time — it detonates minutes later inside from_pretrained,
+# after the dataset has been downloaded and extracted. This is a vision-only
+# pipeline, so remove it rather than chase a matching build.
+pip uninstall -q -y torchaudio 2>/dev/null || true
+
 pip install -q transformers datasets peft accelerate safetensors huggingface_hub pillow numpy scikit-learn tensorboard fontTools
+
+# Fail fast if the dependency set is broken, so the launcher retries on a
+# different machine instead of burning the dataset download first.
+if ! python3 -c "from transformers import Dinov2ForImageClassification, Trainer; import peft, datasets" 2>/tmp/imp.err; then
+    echo "EARLY_FAIL: cannot import the training stack:"
+    tail -5 /tmp/imp.err
+    exit 1
+fi
+echo "==> Training stack imports OK"
 
 # Verify CUDA is available
 if ! python3 -c "import torch; assert torch.cuda.is_available(), 'No CUDA'" 2>/dev/null; then
