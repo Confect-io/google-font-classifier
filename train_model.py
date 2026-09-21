@@ -60,6 +60,10 @@ def parse_args():
                       help='Logging level')
     parser.add_argument('--huggingface_model_name', type=str, default=None,
                       help='Name of the model to push to the Hub')
+    parser.add_argument('--dataloader_workers', type=int, default=4,
+                      help='DataLoader worker processes. Linux forks, so the '
+                           'closure transform is fine at 4. Use 0 for local '
+                           'testing on macOS, which spawns instead.')
     return parser.parse_args()
 
 
@@ -125,23 +129,24 @@ def load_checkpoint_with_size_mismatch_handling(base_model, checkpoint_path, pef
         return model
 
 
-def get_transform(processor: AutoImageProcessor, size: int):
+def make_transform(processor: AutoImageProcessor, size: int):
+    """Batch transform for `Dataset.set_transform` — HF's documented pattern
+    for image datasets (see the image-classification tutorial).
+
+    Applied lazily on __getitem__, so nothing is precomputed to disk. The
+    previous `.map()` materialised every image as a float32 tensor into an
+    Arrow cache (~92 GB for v5, ~150 GB at the current size) and rebuilt it on
+    every instance launch.
+
+    Requires `remove_unused_columns=False` in TrainingArguments: Trainer
+    otherwise strips every column the model's forward() does not name, which
+    deletes "image" before this ever runs.
+    """
     aug = get_inference_transform(processor, size)
 
     def transform(batch):
-        # Applied lazily by set_transform, so this receives a BATCH (each
-        # column a list) rather than one example, and is called on __getitem__
-        # instead of once up front.
-        #
-        # This used to be a `.map()`, which materialised every transformed
-        # image into an Arrow cache: 3x224x224 float32 = 602 KB per image, so
-        # ~92 GB for v5's 163k images and ~150 GB at 252k — rebuilt on every
-        # instance launch, ~25 min for v5 and ~38 min at the new size.
-        # set_transform costs a little CPU per batch instead, which overlaps
-        # with GPU compute under dataloader_num_workers.
-        #
-        # Same pad-to-square + resize + normalize pipeline as inference
-        # (handler.py), so there is still no train/serve skew.
+        # Same pad-to-square + resize + normalize as inference (handler.py),
+        # so there is no train/serve skew.
         return {
             "pixel_values": [aug(img) for img in batch["image"]],
             "label": batch["label"],
@@ -199,7 +204,7 @@ if __name__ == "__main__":
         
         logger.info(f"Train size: {len(dataset['train'])}, Validation size: {len(dataset['test'])}")
 
-        transform = get_transform(processor, size)
+        transform = make_transform(processor, size)
 
         logger.info("Attaching lazy transform (no Arrow cache build)")
         train_dataset = dataset["train"]
@@ -323,7 +328,12 @@ if __name__ == "__main__":
         save_total_limit   = 3,
         logging_dir        = os.path.join(args.output_dir, "logs") if args.output_dir else None,
         logging_steps      = 10,
-        dataloader_num_workers = 4,
+        dataloader_num_workers = args.dataloader_workers,
+        # Required by the lazy transform: Trainer otherwise strips every
+        # column the model's forward() does not name, which deletes "image"
+        # before LazyTransform ever runs (KeyError: 'image'). Harmless under
+        # the old .map(), where pixel_values already existed on disk.
+        remove_unused_columns = False,
         report_to          = "tensorboard",
         load_best_model_at_end = True,
         metric_for_best_model = "eval_accuracy",

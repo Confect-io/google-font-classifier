@@ -255,7 +255,14 @@ pip install -q "torch>=2.6,<2.7" "torchvision>=0.21,<0.22" --index-url https://d
 # pipeline, so remove it rather than chase a matching build.
 pip uninstall -q -y torchaudio 2>/dev/null || true
 
-pip install -q transformers datasets peft accelerate safetensors huggingface_hub pillow numpy scikit-learn tensorboard fontTools
+# transformers 5.x dropped TrainingArguments(logging_dir=...), which
+# train_model.py passes:
+#   TypeError: TrainingArguments.__init__() got an unexpected keyword
+#   argument 'logging_dir'
+# v5 trained on 4.x in May 2026; 5.0 landed since, so an unpinned install now
+# picks up a release this script cannot run. Verified working locally against
+# transformers 4.57.6 / datasets 5.0.1 / peft 0.21.0 / accelerate 1.15.0.
+pip install -q "transformers<5" datasets peft accelerate safetensors huggingface_hub pillow numpy scikit-learn tensorboard fontTools
 
 # Fail fast if the dependency set is broken, so the launcher retries on a
 # different machine instead of burning the dataset download first.
