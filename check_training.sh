@@ -24,9 +24,12 @@ r=[i for i in d if i.get('actual_status')=='running']
 print(*( (r[0]['id'], r[0]['ssh_host'], r[0]['ssh_port'], r[0].get('dph_total') or 0) if r else ('','','','') ))
 ")
 
-if [ -z "${ID:-}" ]; then
+# `hf` inspects the results repo and must work with no instance — that is
+# exactly the case after a completed run destroys its own box.
+if [ -z "${ID:-}" ] && [ "${1:-status}" != "hf" ]; then
     echo "No running instance."
-    echo "If the run finished, results are at https://huggingface.co/$RESULTS_REPO"
+    echo "Results (if the run finished): https://huggingface.co/$RESULTS_REPO"
+    echo "Run './check_training.sh hf' to see what landed."
     exit 0
 fi
 
@@ -45,8 +48,22 @@ try:
 except Exception as e:
     print("repo not created yet:", str(e)[:80]); raise SystemExit
 ck = sorted({int(f.split("/")[1].split("-")[1]) for f in fs if "/checkpoint-" in f})
-print("checkpoints synced:", ck[-5:] if ck else "none yet")
-print("result_model present:", any("result_model" in f for f in fs))
+print("checkpoints synced:", len(ck), "| latest:", ck[-3:] if ck else "none yet")
+done = any("result_model" in f for f in fs)
+print("result_model present:", done, "<- run completed" if done else "<- still running or crashed")
+if ck:
+    try:
+        from huggingface_hub import hf_hub_download
+        import json
+        st = json.load(open(hf_hub_download(repo, f"lora_r16/checkpoint-{ck[-1]}/trainer_state.json",
+                                            repo_type="model")))
+        print(f"best eval_accuracy: {st.get('best_metric')}")
+        print("best checkpoint:   ", (st.get("best_model_checkpoint") or "").split("/")[-1])
+        ev = [h for h in st["log_history"] if "eval_accuracy" in h]
+        if ev:
+            print(f"last eval: acc {ev[-1]['eval_accuracy']:.4f} at epoch {ev[-1]['epoch']:.1f}")
+    except Exception as e:
+        print("(trainer_state unavailable:", str(e)[:60], ")")
 print("logs:", [f for f in fs if f.startswith("logs/")])
 PY
     ;;
