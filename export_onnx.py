@@ -1,7 +1,8 @@
 """Export the trained LoRA-adapted DINOv2 classifier to ONNX.
 
 Downloads the LoRA adapter from a results repo, merges it into the base
-DINOv2 model, exports to ONNX at 224x224 (the size training used), and
+DINOv2 model, exports to ONNX at the resolution training used (read from the
+base processor, currently 256), and
 writes the int->label JSON the design-agent expects next to its fonts.py.
 
 Run:
@@ -28,13 +29,24 @@ import torch
 from huggingface_hub import HfApi, hf_hub_url, snapshot_download
 from peft import PeftModel
 from safetensors import safe_open
-from transformers import Dinov2ForImageClassification
+from transformers import AutoImageProcessor, Dinov2ForImageClassification
 
 BASE_MODEL = "facebook/dinov2-base-imagenet1k-1-layer"
-# Training used `processor.size["shortest_edge"]` which is 224 for
-# `facebook/dinov2-base-imagenet1k-1-layer`. We export at the same size so
-# inference matches training.
-INPUT_SIZE = 224
+
+# Export at whatever size TRAINING used, which is
+# `processor.size["shortest_edge"]` (train_model.py reads exactly that).
+#
+# This was hardcoded to 224 with a comment claiming the processor said 224.
+# It says **256**; `crop_size` is the 224 (and train_model.py never crops).
+# So every export before this ran the model at a resolution it had never
+# seen. DINOv2 interpolates its position embeddings, so it degrades silently
+# rather than failing: measured 89.1% top-1 at 224 against 96.3% at 256 on
+# the same v6 checkpoint. Read it from the processor instead of asserting it.
+def _training_input_size() -> int:
+    proc = AutoImageProcessor.from_pretrained(BASE_MODEL)
+    size = proc.size["shortest_edge"]
+    print(f"Training input size from processor: {size}")
+    return size
 
 
 def get_num_labels_from_checkpoint(adapter_path: str) -> int:
@@ -168,8 +180,9 @@ def main() -> int:
     merged.config.num_labels = len(deploy_labels)
     merged.eval()
 
-    print(f"Exporting to ONNX at {INPUT_SIZE}x{INPUT_SIZE} input -> {args.onnx_out}")
-    dummy = torch.randn(1, 3, INPUT_SIZE, INPUT_SIZE)
+    input_size = _training_input_size()
+    print(f"Exporting to ONNX at {input_size}x{input_size} input -> {args.onnx_out}")
+    dummy = torch.randn(1, 3, input_size, input_size)
     torch.onnx.export(
         merged,
         dummy,
