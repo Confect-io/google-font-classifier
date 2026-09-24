@@ -185,6 +185,63 @@ start, results upload, instance teardown) on a tiny test dataset in
   394-class run was 33 hrs). Cost: ~$3-5 at $0.30-0.50/hr.
 - Auto-retries up to 5 instances on failure; destroys the box when done.
 
+## Font-weight benchmark
+
+`weight_probe.py` is the promotion gate for deriving upright CSS weights
+300–900 from OCR crops after the font family is known. It verifies filename
+weights against each font's OS/2 metadata, intersects variants with an optional
+Confect catalogue export, uses disjoint calibration/validation/final seeds, and
+reports confusion matrices, per-family/category/background results,
+precision/coverage curves, and abstention reasons.
+
+The locked 2026-09-24 oracle-family run covered all 153 classifier families and
+all 683 available upright variants. Single-weight families were excluded from
+the gate. Its 12,840-crop final set contained 20 examples per multi-weight
+family/weight pair, balanced across flat, gradient, textured, and photographic
+backgrounds.
+
+| Result | Locked final |
+|---|---:|
+| Multi-weight families | 112 |
+| Measurable coverage | 71.3% |
+| Exact accuracy on measurable crops | 44.7% |
+| Authoritative precision / coverage | 0.0% / 0.0% |
+| Legacy global-bold accuracy | 59.7% |
+| Legacy emitted-bold precision | 69.7% |
+
+This fails the original 95% exact precision at 50% coverage even when the true
+family is supplied, so the result must not be treated as authoritative.
+A fixed 20-family same-text diagnostic reached 100% only when it could render
+the exact source text with the same font files and render parameters; that is a
+diagnostic upper bound, not a deployable method.
+
+After the locked run, the product tolerance was clarified as three practical
+groups: 300/400, 500/600, and 700/800/900, with a result within 100 also useful.
+Rescoring the saved final predictions did not require another image run:
+
+| Relaxed result | Measurable crops |
+|---|---:|
+| Top prediction within 100 | 82.2% |
+| Top prediction in the requested group | 69.7% |
+| Either of the top two within 100 | 91.7% |
+| Either of the top two in the requested group | 84.0% |
+
+An exploratory disjoint 40/60 split selected a raw-confidence threshold on the
+first partition and achieved 95.9% precision at 51.9% coverage on the second
+for “one of the two candidates is within 100.” This criterion was defined only
+after inspecting the original final result, and the algorithm still cannot
+authoritatively choose between the candidates. Treat it as a promising advisory
+experiment that needs a newly locked confirmation set, not as a promotion.
+
+The shipped advisory policy is deliberately stricter than the raw two-candidate
+result. `weight_probe.py` exports family centroids, supported variants,
+probability bins, and a validation-selected threshold. Runtime also rejects any
+bin calibrated below 90% precision. Applied unchanged to the locked final set,
+that policy reached 93.5% requested-group precision at 21.4% coverage. The
+design agent presents the two supported candidates on the matching OCR line and
+requires a visual choice; rejected crops receive no estimate. It does not claim
+an authoritative weight.
+
 ## Swapping the trained model into the design-agent
 
 After training finishes, the new checkpoint sits in `confect/google-font-classifier`.
