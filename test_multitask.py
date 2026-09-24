@@ -7,6 +7,7 @@ from font_weight_labels import ordinal_targets, weight_group
 from multitask_dataset import PairedFontDataset, family_names
 from multitask_model import Dinov2ForFontClassification
 from PIL import Image
+from split_multitask_evaluation import validation_pair_ids
 from train_multitask import metrics
 
 
@@ -62,6 +63,26 @@ def test_dataset_preserves_pairs_and_masks_external_families(tmp_path):
     pairs = [dataset[index] for index in range(len(dataset))]
     assert sorted(len(pair) for pair in pairs) == [2, 2]
     assert sorted({item["family_label"] for pair in pairs for item in pair}) == [-100, 0]
+
+
+def test_evaluation_split_keeps_pairs_together():
+    records = [
+        {"pair_id": "a"},
+        {"pair_id": "a"},
+        {"pair_id": "b"},
+        {"pair_id": "b"},
+        {"pair_id": "c"},
+        {"pair_id": "d"},
+    ]
+
+    selected = validation_pair_ids(records, 0.5, 42)
+
+    validation = [row for row in records if row["pair_id"] in selected]
+    test = [row for row in records if row["pair_id"] not in selected]
+    assert len(validation) == 3
+    assert {row["pair_id"] for row in validation}.isdisjoint(
+        row["pair_id"] for row in test
+    )
 
 
 def test_family_consistency_is_zero_for_equal_distributions():

@@ -258,6 +258,9 @@ uv run --with numpy --with pillow --with fonttools --with tqdm \
     --families Montserrat Lora --train_per_class 8 --test_per_class 4 \
     --workers 1 --seed 42
 
+uv run python3 split_multitask_evaluation.py \
+  ./.data_out/font-weight-v2-smoke
+
 uv run --with 'torch>=2.6,<2.7' --with 'torchvision>=0.21,<0.22' \
   --with 'transformers<5' --with peft --with accelerate \
   --with safetensors --with tensorboard --with pillow --with numpy \
@@ -295,8 +298,10 @@ uv run --with numpy --with pillow --with fonttools --with tqdm \
   python3 dataset_generator.py \
     --font_dir ./fonts_v2 --out_dir ./data_v2 --img_size 256 --seed 42
 
+uv run python3 split_multitask_evaluation.py ./data_v2
+
 tar cf train-v2.tar -C ./data_v2 train/
-tar cf test-v2.tar -C ./data_v2 test/
+tar cf test-v2.tar -C ./data_v2 validation/ test/
 HF_HUB_DISABLE_XET=1 hf upload confect/google-font-weight-dataset-v2 \
   train-v2.tar train.tar --repo-type=dataset
 HF_HUB_DISABLE_XET=1 hf upload confect/google-font-weight-dataset-v2 \
@@ -316,9 +321,10 @@ PATH="/opt/homebrew/bin:$PATH" ./cloud_train.sh \
 ```
 
 The launcher requires these exact v2 dataset and result repository names and
-rejects datasets without per-family `metadata.jsonl`, so passing the old v6
-dataset fails before training rather than silently training the wrong
-objective. Multitask training initializes the family path from
+rejects datasets without train, validation, and locked-test metadata, so
+passing the old v6 dataset fails before training rather than silently training
+the wrong objective. Checkpoint selection uses validation only; the locked test
+is evaluated once after training. Multitask training initializes the family path from
 `confect/google-font-classifier-v6/lora_r16/result_model`, then adds and trains
 the new ordinal head.
 

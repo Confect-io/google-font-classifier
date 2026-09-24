@@ -55,14 +55,27 @@ def validate_split(root: Path) -> dict:
     }
 
 
+def pair_ids(root: Path) -> set[str]:
+    return {
+        json.loads(line)["pair_id"]
+        for metadata in root.glob("*/metadata.jsonl")
+        for line in metadata.read_text().splitlines()
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Validate paired font dataset metadata")
     parser.add_argument("data_dir", type=Path)
     args = parser.parse_args()
     report = {
         split: validate_split(args.data_dir / split)
-        for split in ("train", "test")
+        for split in ("train", "validation", "test")
     }
+    validation_pairs = pair_ids(args.data_dir / "validation")
+    test_pairs = pair_ids(args.data_dir / "test")
+    overlap = validation_pairs & test_pairs
+    if overlap:
+        raise ValueError(f"Validation and test share {len(overlap)} pairs")
     print(json.dumps(report, indent=2))
     return 0
 

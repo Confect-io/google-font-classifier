@@ -345,9 +345,13 @@ find data/ -name '._*' -delete 2>/dev/null || true
 rm -rf /root/.cache/huggingface/hub 2>/dev/null || true
 
 echo "==> Dataset ready: $(ls data/train/ | wc -l) train variants, $(ls data/test/ | wc -l) test variants"
-if [ "$MODE" = "multitask" ] && ! compgen -G 'data/train/*/metadata.jsonl' > /dev/null; then
-    echo "EARLY_FAIL: multitask mode requires the paired v2 dataset metadata."
-    exit 1
+if [ "$MODE" = "multitask" ]; then
+    for split in train validation test; do
+        if ! compgen -G "data/$split/*/metadata.jsonl" > /dev/null; then
+            echo "EARLY_FAIL: multitask mode requires v2 metadata for $split."
+            exit 1
+        fi
+    done
 fi
 df -h /workspace | tail -1
 

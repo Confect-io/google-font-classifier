@@ -306,6 +306,8 @@ pixels or OCR text. No HTTP API or stored Design schema change is required.
 Classifier repository:
 
 - `dataset_generator.py`: emit verified family and weight metadata.
+- `split_multitask_evaluation.py`: partition whole pairs into validation and
+  locked test sets.
 - `train_multitask.py`: train the shared backbone, family head, ordinal head,
   masked losses, paired consistency, metrics, and frozen-probe mode.
 - `export_multitask_onnx.py`: merge adapters and export both named outputs plus

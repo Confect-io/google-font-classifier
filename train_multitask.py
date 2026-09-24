@@ -163,7 +163,7 @@ def main() -> int:
         split: PairedFontDataset(
             args.data_dir, split, labels, args.extra_weight_data_dir
         )
-        for split in ("train", "test")
+        for split in ("train", "validation", "test")
     }
     collator = make_collator(
         processor,
@@ -238,15 +238,22 @@ def main() -> int:
         model=model,
         args=training_args,
         train_dataset=datasets["train"],
-        eval_dataset=datasets["test"],
+        eval_dataset=datasets["validation"],
         data_collator=collator,
         compute_metrics=metrics,
     )
     trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
+    test_metrics = trainer.evaluate(
+        eval_dataset=datasets["test"], metric_key_prefix="test"
+    )
+    print(json.dumps({"locked_test": test_metrics}, sort_keys=True))
 
     result_dir = output_dir / "result_model"
     trainer.save_model(result_dir)
     processor.save_pretrained(result_dir)
+    (result_dir / "locked_test_metrics.json").write_text(
+        json.dumps(test_metrics, sort_keys=True)
+    )
     (result_dir / "font_model_metadata.json").write_text(
         json.dumps(
             {
