@@ -205,7 +205,7 @@ upload_log() {
     python3 -c "
 from huggingface_hub import HfApi
 import os, datetime
-api = HfApi(token='__HF_TOKEN__')
+api = HfApi(token=os.environ['HF_TOKEN'])
 api.create_repo('__HF_RESULTS__', repo_type='model', exist_ok=True)
 log_path = '/workspace/training.log'
 if os.path.exists(log_path):
@@ -322,8 +322,9 @@ fi
 echo "==> Downloading dataset from HuggingFace: $HF_DATASET"
 for _dl_try in 1 2 3 4 5; do
     if python3 -c "
+import os
 from huggingface_hub import snapshot_download
-snapshot_download(repo_id='${HF_DATASET}', repo_type='dataset', local_dir='data', token='__HF_TOKEN__')
+snapshot_download(repo_id='${HF_DATASET}', repo_type='dataset', local_dir='data', token=os.environ['HF_TOKEN'])
 "; then
         break
     fi
@@ -380,8 +381,9 @@ sync_checkpoints_to_hf() {
         local latest=$(ls -d ${output_dir}/checkpoint-* 2>/dev/null | sort -t- -k2 -n | tail -1)
         if [ -n "$latest" ]; then
             python3 -c "
+import os
 from huggingface_hub import HfApi
-api = HfApi(token='__HF_TOKEN__')
+api = HfApi(token=os.environ['HF_TOKEN'])
 api.upload_folder(
     folder_path='$latest',
     path_in_repo='${mode_name}/$(basename $latest)',
@@ -401,7 +403,7 @@ download_checkpoint_from_hf() {
     python3 -c "
 from huggingface_hub import HfApi, snapshot_download
 import os, re
-api = HfApi(token='__HF_TOKEN__')
+api = HfApi(token=os.environ['HF_TOKEN'])
 try:
     files = api.list_repo_files('__HF_RESULTS__', repo_type='model')
 except:
@@ -566,8 +568,9 @@ echo "============================================"
 if [ -d "$OUTPUT_BASE" ] && [ "$(ls -A $OUTPUT_BASE 2>/dev/null)" ]; then
     echo "==> Uploading results to HuggingFace: __HF_RESULTS__"
     python3 -c "
+import os
 from huggingface_hub import HfApi
-api = HfApi(token='__HF_TOKEN__')
+api = HfApi(token=os.environ['HF_TOKEN'])
 api.create_repo('__HF_RESULTS__', repo_type='model', exist_ok=True)
 api.upload_folder(folder_path='$OUTPUT_BASE', repo_id='__HF_RESULTS__', repo_type='model')
 print('Upload complete.')
