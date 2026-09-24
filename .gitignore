@@ -27,6 +27,8 @@ cloud_train_*.log
 fonts/
 data/
 data_smoke/
+fonts_v2/
+data_v2/
 *.tar
 
 # Confect: font-curation intermediates (regenerable via shortlist_fonts.py)

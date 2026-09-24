@@ -1,11 +1,16 @@
 # Font classifier v2: family and weight prediction
 
-Status: proposed implementation plan
+Status: local implementation validated; full training and promotion pending
 
 Tracking: Confect's design agent currently uses the v6 family classifier plus
 a conservative morphology-based weight hint. That is v1. This document defines
 v2: retrain the classifier with an independent weight output that also works on
 font families outside the classifier vocabulary.
+
+V6 can also entangle family with visual weight: a bold crop may resolve to a
+different family whose medium variant is naturally dark. V2 must keep the
+family ranking stable as a face changes weight instead of merely adding a
+second output to the existing behavior.
 
 ## Goal
 
@@ -21,15 +26,15 @@ The product mainly needs neighboring CSS weights to be interchangeable:
 
 | Group | CSS weights | Product meaning |
 |---|---|---|
-| ultra-light | 100, 200 | thin custom variants |
 | light/regular | 300, 400 | visually light or normal |
 | medium/semibold | 500, 600 | visibly stronger than regular |
 | bold/heavy | 700, 800, 900 | clearly bold |
 
-The required promotion evaluation covers 300-900. Train and report 100/200 as
-a separate group so custom thin variants are not silently reported as regular,
-but do not let sparse ultra-light coverage decide the initial promotion. Do not
-include italic classification in this work.
+The training and promotion scope is 300-900. Weights 100/200 are uncommon in
+ads and too fragile at typical ad resolution to justify a separate output in
+this version. A custom family whose only upright variant is 100/200 still uses
+that known variant from metadata; otherwise those weights fall back to visual
+judgment. Do not include italic classification in this work.
 
 ## Relationship to v1
 
@@ -60,9 +65,14 @@ The family head stays exactly 153-way. The weight head is ordinal rather than
 an ordinary softmax because the groups have an order and adjacent errors are
 less severe than distant errors.
 
-Use three cumulative logits for the four groups:
+Generate same-text pairs that differ only in weight and penalize disagreement
+between their family distributions. Apply that consistency loss to the family
+logits, not the shared representation: the shared features must retain weight
+information for the ordinal head while the family output learns not to depend
+on it.
 
-- `P(weight >= 300)`
+Use two cumulative logits for the three groups:
+
 - `P(weight >= 500)`
 - `P(weight >= 700)`
 
@@ -73,7 +83,7 @@ The ONNX model exposes:
 
 ```text
 family_logits: [batch, 153]
-weight_logits: [batch, 3]
+weight_logits: [batch, 2]
 ```
 
 Do not add an embedding output in the first implementation. The existing
@@ -99,6 +109,10 @@ Balance weight groups within each family before balancing individual weights.
 Otherwise variable families with many files can dominate the weight loss.
 Continue varying text, size, antialiasing, compression, crop slack, color, and
 background. Include flat, gradient, textured, and photographic backgrounds.
+
+A training pair uses the same family, text, color, background, crop settings,
+and degradation seed at two different weight groups. Never construct a pair
+from different families merely because their darkness is similar.
 
 Build three sources:
 
@@ -133,23 +147,37 @@ unseen-family result is the primary custom-font metric.
 
 ## Training sequence
 
+### Phase 0: measure the v6 family bias
+
+Evaluate identical texts at every supported weight. Report family top-1,
+top-5, and severity-weighted accuracy by source weight group, how often the top
+family changes when only weight changes, and which substitute families receive
+bold/heavy crops. This is the baseline v2 must improve.
+
 ### Phase 1: frozen probe
 
 Load the deployed v6 checkpoint, freeze the backbone and existing family head,
 and train only the ordinal weight head. This is the cheapest experiment and
 guarantees that family predictions cannot regress.
 
+This diagnoses whether the current representation retains weight information,
+but it cannot repair an existing family bias because the family path is frozen.
+
 ### Phase 2: joint LoRA training
 
-Only run this phase if the frozen probe misses the weight gate. Train with:
+Run this phase if the phase-0 audit confirms the bold-family failure or the
+frozen probe misses the weight gate. Train with:
 
 ```text
-loss = family_cross_entropy + lambda_weight * ordinal_weight_loss
+loss = family_cross_entropy
+     + lambda_weight * ordinal_weight_loss
+     + lambda_consistency * paired_family_consistency_loss
 ```
 
 Mask `family_cross_entropy` for weight-only families. Apply the weight loss to
-every sample with reliable weight metadata. Tune `lambda_weight` on validation
-data, and retain the existing family checkpoint when two runs are equivalent.
+every sample with reliable weight metadata and consistency only within a valid
+same-family pair. Tune both lambdas on validation data, and retain the existing
+family checkpoint when two runs are equivalent.
 
 Save both heads in the LoRA checkpoint. Select checkpoints using a composite
 validation report that cannot hide a family regression behind improved weight
@@ -165,6 +193,10 @@ For family prediction, report the existing top-1, top-5, and
 visual-severity-weighted metrics on the current locked family evaluation set.
 V2 must not regress top-1 by more than 0.5 percentage points or materially
 worsen the severity-weighted result.
+
+Report the family metrics separately for every source weight group and include
+a paired stability matrix. Bold/heavy family recognition is a promotion metric,
+not a diagnostic slice hidden in the aggregate.
 
 For weight prediction, report:
 
@@ -183,6 +215,7 @@ the locked test sets. Promotion requires all of the following:
 - the same gate passes on the unseen-family/custom-like test set, not only on
   the 153 known families;
 - no unacceptable family-classification regression;
+- bold/heavy family accuracy and paired family stability improve over v6;
 - full-canvas RapidOCR evaluation confirms that OCR crop generation does not
   invalidate the tight-crop result.
 
@@ -237,9 +270,22 @@ for image comparison. Variant metadata is enough to filter the ordinal result.
 Same-text rendering of all variants is a possible later refinement when exact
 700-versus-800 selection becomes valuable.
 
+Weight-invariant family logits should also make the current custom matcher less
+sensitive to its use of the first uploaded variant when comparing against a
+bold reference crop.
+
 ## Design-agent integration
 
-Deploy the model under a new versioned artifact name; do not overwrite v6.
+Use these separate artifact names:
+
+- dataset: `confect/google-font-weight-dataset-v2`;
+- training results: `confect/google-font-classifier-v7-weight`;
+- deployment artifact: `font-classifier-v7-weight.onnx`.
+
+V2 names this project and dataset generation; v7 is the classifier artifact
+version following the deployed v6 family model.
+
+Do not overwrite the v6 dataset, model repository, or ONNX artifact.
 Update the runtime wrapper to read both ONNX outputs and validate their shapes
 against versioned label metadata.
 
@@ -260,10 +306,10 @@ pixels or OCR text. No HTTP API or stored Design schema change is required.
 Classifier repository:
 
 - `dataset_generator.py`: emit verified family and weight metadata.
-- `train_model.py`: introduce the shared backbone, family head, ordinal head,
-  masked losses, metrics, and frozen-probe mode.
-- `export_onnx.py`: merge adapters and export both named outputs plus versioned
-  weight metadata.
+- `train_multitask.py`: train the shared backbone, family head, ordinal head,
+  masked losses, paired consistency, metrics, and frozen-probe mode.
+- `export_multitask_onnx.py`: merge adapters and export both named outputs plus
+  versioned weight metadata.
 - `handler.py`: return family and calibrated weight results for hosted tests.
 - add a deterministic evaluator for known-family, unseen-family, and realistic
   OCR sets.
@@ -282,6 +328,8 @@ Confect repository:
 
 - weight labels come from font metadata and reject mismatches;
 - group boundaries and cumulative targets are deterministic;
+- paired samples retain the same render settings while changing weight;
+- family consistency is applied only within a valid pair;
 - family loss is masked for external families while weight loss remains active;
 - weight loss is masked when metadata is absent;
 - ONNX and PyTorch outputs agree within tolerance;
@@ -297,11 +345,12 @@ Confect repository:
 ## Deliverables
 
 1. Reproducible dataset manifest and split seeds.
-2. Frozen-probe results.
-3. Joint-training results only if the probe is insufficient.
-4. Locked evaluation report with known and unseen families separated.
-5. Versioned ONNX model and compact metadata.
-6. Design-agent integration that replaces v1 after the promotion gate passes.
+2. V6 family-by-weight bias audit.
+3. Frozen-probe results.
+4. Joint-training results when the bias audit or probe requires them.
+5. Locked evaluation report with known and unseen families separated.
+6. Versioned ONNX model and compact metadata.
+7. Design-agent integration that replaces v1 after the promotion gate passes.
 
 ## References
 

@@ -242,6 +242,86 @@ design agent presents the two supported candidates on the matching OCR line and
 requires a visual choice; rejected crops receive no estimate. It does not claim
 an authoritative weight.
 
+## Family + weight model v2
+
+The implementation and promotion plan is in `FONT_WEIGHT_MODEL_V2.md`. V2 uses
+the same DINOv2 backbone with a 153-family head and a separate two-logit ordinal
+head for 300/400, 500/600, and 700/800/900. Same-text weight pairs also train
+the family output to remain stable when only boldness changes.
+
+Run the local end-to-end smoke test before renting a GPU:
+
+```bash
+uv run --with numpy --with pillow --with fonttools --with tqdm \
+  python3 dataset_generator.py \
+    --font_dir ./fonts_v2 --out_dir ./.data_out/font-weight-v2-smoke \
+    --families Montserrat Lora --train_per_class 8 --test_per_class 4 \
+    --workers 1 --seed 42
+
+uv run --with 'torch>=2.6,<2.7' --with 'torchvision>=0.21,<0.22' \
+  --with 'transformers<5' --with peft --with accelerate \
+  --with safetensors --with tensorboard --with pillow --with numpy \
+  --with fonttools python3 train_multitask.py \
+    --data_dir ./.data_out/font-weight-v2-smoke \
+    --labels ./font_labels_v6.json \
+    --initial_adapter confect/google-font-classifier-v6 \
+    --initial_adapter_subfolder lora_r16/result_model \
+    --output_dir ./.data_out/font-weight-v2-output \
+    --batch_size 2 --epochs 1
+
+uv run --with 'torch>=2.6,<2.7' --with 'torchvision>=0.21,<0.22' \
+  --with 'transformers<5' --with peft --with safetensors --with onnx \
+  --with pillow --with numpy python3 export_multitask_onnx.py \
+    --adapter ./.data_out/font-weight-v2-output/result_model \
+    --onnx_out ./.data_out/font-classifier-v7-weight-smoke.onnx
+
+uv run --with 'torch>=2.6,<2.7' --with 'torchvision>=0.21,<0.22' \
+  --with 'transformers<5' --with peft --with safetensors --with onnxruntime \
+  --with pillow --with numpy python3 verify_multitask_onnx.py \
+    --adapter ./.data_out/font-weight-v2-output/result_model \
+    --onnx ./.data_out/font-classifier-v7-weight-smoke.onnx \
+    --image <one-generated-test-jpg>
+```
+
+Each evaluation epoch logs family top-1/top-5, family accuracy by source
+weight group, weight-group accuracy, group-distance error, joint accuracy,
+paired-family stability, and the family/weight/consistency losses. The Vast
+launcher captures these in the normal uploaded training log.
+
+The full dataset lives beside v6 rather than replacing it:
+
+```bash
+uv run --with numpy --with pillow --with fonttools --with tqdm \
+  python3 dataset_generator.py \
+    --font_dir ./fonts_v2 --out_dir ./data_v2 --img_size 256 --seed 42
+
+tar cf train-v2.tar -C ./data_v2 train/
+tar cf test-v2.tar -C ./data_v2 test/
+HF_HUB_DISABLE_XET=1 hf upload confect/google-font-weight-dataset-v2 \
+  train-v2.tar train.tar --repo-type=dataset
+HF_HUB_DISABLE_XET=1 hf upload confect/google-font-weight-dataset-v2 \
+  test-v2.tar test.tar --repo-type=dataset
+```
+
+Do not start the Vast run until the local checkpoint has been reloaded, exported
+with `export_multitask_onnx.py`, and executed through ONNX Runtime.
+
+When approved, the distinct v2 launch command is:
+
+```bash
+PATH="/opt/homebrew/bin:$PATH" ./cloud_train.sh \
+  --hf_dataset confect/google-font-weight-dataset-v2 \
+  --hf_results confect/google-font-classifier-v7-weight \
+  --mode multitask --gpu RTX_4090 --batch_size 32 --epochs 100
+```
+
+The launcher requires these exact v2 dataset and result repository names and
+rejects datasets without per-family `metadata.jsonl`, so passing the old v6
+dataset fails before training rather than silently training the wrong
+objective. Multitask training initializes the family path from
+`confect/google-font-classifier-v6/lora_r16/result_model`, then adds and trains
+the new ordinal head.
+
 ## Swapping the trained model into the design-agent
 
 After training finishes, the new checkpoint sits in `confect/google-font-classifier`.

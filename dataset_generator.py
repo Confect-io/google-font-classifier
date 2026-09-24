@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-"""Render synthetic text crops for DINOv2 fine-tuning.
+"""Render paired synthetic text crops for DINOv2 fine-tuning.
 
-One class per FAMILY (a directory under --font_dir). Weight is sampled per
-image from whatever .ttf files that directory holds, so the model learns a
-family across weights instead of treating each weight as its own class — the
-design agent discards predicted weight anyway.
+One class per family. Each pair keeps its text and augmentation fixed while
+changing the font weight, allowing the family head to learn weight invariance
+and the ordinal head to learn weight.
 
 Run:
     uv run --with numpy --with pillow --with tqdm python3 dataset_generator.py \\
         --font_dir ./fonts --out_dir ./data --train_per_class 1500
 """
 import argparse
+import itertools
+import json
 import logging
 import multiprocessing
 import os
@@ -19,6 +20,7 @@ import random
 import sys
 
 import numpy as np
+from font_weight_labels import font_weight, weight_group
 from PIL import Image, ImageDraw, ImageFont
 from tqdm import tqdm
 
@@ -174,16 +176,47 @@ def _worker_init(corpus):
     _TEXT_CORPUS = corpus
 
 
+def _render_with_seed(text, font, padding, img_size, seed):
+    random_state = random.getstate()
+    numpy_state = np.random.get_state()
+    try:
+        random.seed(seed)
+        np.random.seed(seed % (2**32))
+        return render_and_crop(text, font, padding, img_size)
+    finally:
+        random.setstate(random_state)
+        np.random.set_state(numpy_state)
+
+
+def _sample_text(corpus):
+    single = random.random() < SINGLE_LINE_P
+    roll = random.random()
+    if roll < 0.10:
+        return f"{random.randint(1, 1000000)}"
+    if roll < 0.18:
+        return f"${random.randint(1, 100000)}"
+    if roll < 0.25:
+        return f"{random.randint(0, 100)}%"
+    return choose_sentence(corpus, single)
+
+
 def _generate_family(args):
-    """All images for one family. Weight is sampled per image."""
+    """Generate same-text pairs across the available weight groups."""
     (family, ttf_paths, train_dir, test_dir, font_size, img_size, padding,
-     n_train, n_test, no_clobber) = args
+     n_train, n_test, no_clobber, seed) = args
 
     fonts = []
     for p in ttf_paths:
         try:
-            fonts.append(ImageFont.truetype(p, font_size,
-                                            layout_engine=ImageFont.Layout.BASIC))
+            weight = font_weight(p)
+            fonts.append(
+                (
+                    weight,
+                    ImageFont.truetype(
+                        p, font_size, layout_engine=ImageFont.Layout.BASIC
+                    ),
+                )
+            )
         except Exception as e:
             logger.warning("load failed %s: %s", p, e)
     if not fonts:
@@ -192,46 +225,83 @@ def _generate_family(args):
     corpus = _TEXT_CORPUS
     made = {"train": 0, "test": 0}
 
-    def emit(root, idx):
-        font = random.choice(fonts)
-        single = random.random() < SINGLE_LINE_P
-        roll = random.random()
-        if roll < 0.10:
-            text = f"{random.randint(1, 1000000)}"
-        elif roll < 0.18:
-            text = f"${random.randint(1, 100000)}"
-        elif roll < 0.25:
-            text = f"{random.randint(0, 100)}%"
-        else:
-            text = choose_sentence(corpus, single)
+    by_group = {}
+    for weight, font in fonts:
+        by_group.setdefault(weight_group(weight), []).append((weight, font))
+    groups = sorted(by_group)
+    group_pairs = list(itertools.combinations(groups, 2)) or [(groups[0],)]
+
+    def emit(root, split, pair_index, image_index, remaining):
+        text = _sample_text(corpus)
         if not text:
-            return False
-        img = render_and_crop(text, font, padding, img_size)
-        if img is None:
-            return False
-        dest = root / f"{idx}.jpg"
-        if no_clobber and dest.exists():
-            return True
-        img.save(dest, "JPEG", quality=random.randint(*JPEG_QUALITY),
-                 optimize=False, subsampling=2)
-        return True
+            return []
+        selected_groups = group_pairs[pair_index % len(group_pairs)]
+        selected = [random.choice(by_group[group]) for group in selected_groups]
+        augmentation_seed = random.randrange(2**31)
+        quality = random.randint(*JPEG_QUALITY)
+        records = []
+        pair_id = f"{family}:{split}:{pair_index}"
+        for weight, font in selected[:remaining]:
+            image = _render_with_seed(
+                text, font, padding, img_size, augmentation_seed
+            )
+            if image is None:
+                continue
+            filename = (
+                f"{image_index + len(records):06d}-p{pair_index:06d}-w{weight}.jpg"
+            )
+            destination = root / filename
+            if not no_clobber or not destination.exists():
+                image.save(
+                    destination,
+                    "JPEG",
+                    quality=quality,
+                    optimize=False,
+                    subsampling=2,
+                )
+            records.append(
+                {
+                    "file_name": filename,
+                    "family": family,
+                    "weight": weight,
+                    "weight_group": weight_group(weight),
+                    "pair_id": pair_id,
+                }
+            )
+        return records
 
     for split, count, base in (("train", n_train, pathlib.Path(train_dir)),
                                ("test", n_test, pathlib.Path(test_dir))):
+        random.seed(f"{seed}:{family}:{split}")
+        np.random.seed(random.randrange(2**32))
         root = base / family
         root.mkdir(parents=True, exist_ok=True)
-        i = 0
+        records = []
+        pair_index = 0
         attempts = 0
-        while made[split] < count and attempts < count * 3:
+        while len(records) < count and attempts < count * 3:
             attempts += 1
-            if emit(root, i):
-                made[split] += 1
-                i += 1
+            pair_records = emit(
+                root,
+                split,
+                pair_index,
+                len(records),
+                count - len(records),
+            )
+            if pair_records:
+                records.extend(pair_records)
+                pair_index += 1
+        metadata_tmp = root / "metadata.jsonl.tmp"
+        metadata_tmp.write_text(
+            "".join(json.dumps(record, sort_keys=True) + "\n" for record in records)
+        )
+        metadata_tmp.replace(root / "metadata.jsonl")
+        made[split] = len(records)
     return family, made["train"], made["test"]
 
 
 def build_dataset(font_dir, out_dir, font_size, img_size, padding, no_clobber,
-                  workers, n_train, n_test):
+                  workers, n_train, n_test, seed, selected_families=None):
     font_dir, out_dir = pathlib.Path(font_dir), pathlib.Path(out_dir)
     train_dir, test_dir = out_dir / "train", out_dir / "test"
     train_dir.mkdir(parents=True, exist_ok=True)
@@ -240,6 +310,8 @@ def build_dataset(font_dir, out_dir, font_size, img_size, padding, no_clobber,
     # The directory IS the class. No allowlist to keep in sync any more.
     families = []
     for d in sorted(p for p in font_dir.iterdir() if p.is_dir()):
+        if selected_families and d.name not in selected_families:
+            continue
         ttfs = sorted(str(f) for f in d.glob("*.ttf"))
         if ttfs:
             families.append((d.name, ttfs))
@@ -254,7 +326,8 @@ def build_dataset(font_dir, out_dir, font_size, img_size, padding, no_clobber,
 
     corpus = _load_text_corpus()
     work = [(fam, ttfs, str(train_dir), str(test_dir), font_size, img_size,
-             padding, n_train, n_test, no_clobber) for fam, ttfs in families]
+             padding, n_train, n_test, no_clobber, seed)
+            for fam, ttfs in families]
 
     results = []
     with multiprocessing.Pool(workers, initializer=_worker_init,
@@ -266,7 +339,7 @@ def build_dataset(font_dir, out_dir, font_size, img_size, padding, no_clobber,
     short = [(f, tr) for f, tr, _ in results if tr < n_train]
     total_train = sum(tr for _, tr, _ in results)
     total_test = sum(te for _, _, te in results)
-    print(f"\n--- Summary ---")
+    print("\n--- Summary ---")
     print(f"  Families:     {len(results)}")
     print(f"  Train images: {total_train:,}")
     print(f"  Test images:  {total_test:,}")
@@ -288,13 +361,16 @@ def cli():
     ap.add_argument("--test_per_class", type=int, default=150)
     ap.add_argument("--no-clobber", action="store_true")
     ap.add_argument("--workers", type=int, default=None)
+    ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--families", nargs="+")
     ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING)
     build_dataset(args.font_dir, args.out_dir, args.font_size, args.img_size,
                   args.padding, args.no_clobber, args.workers or os.cpu_count() or 1,
-                  args.train_per_class, args.test_per_class)
+                  args.train_per_class, args.test_per_class, args.seed,
+                  set(args.families) if args.families else None)
 
 
 if __name__ == "__main__":

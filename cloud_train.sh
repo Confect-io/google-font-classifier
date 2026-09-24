@@ -56,7 +56,11 @@ done
 
 # Dry run overrides
 if [ "$DRY_RUN" = "true" ]; then
-    HF_DATASET="dchen0/font_crops_test"
+    if [ "$MODE" = "multitask" ]; then
+        HF_DATASET="confect/google-font-weight-dataset-v2-smoke"
+    else
+        HF_DATASET="dchen0/font_crops_test"
+    fi
     HF_RESULTS="${HF_RESULTS:-dchen0/font-model-dry-run}"
     EPOCHS=1
     DISK_GB=50
@@ -82,11 +86,22 @@ if [ -z "$HF_DATASET" ] || [ -z "$HF_RESULTS" ]; then
     echo "  --max_price    Max hourly price in USD (default: 2.00)"
     echo "  --batch_size   Batch size (default: 64)"
     echo "  --epochs       Number of epochs (default: 100)"
-    echo "  --mode         Training mode: lora, lora4, lora16, full, linear, resnet, or all"
+    echo "  --mode         Training mode: multitask, lora, lora4, lora16, full, linear, resnet, or all"
     echo "  --output       Local directory for results (default: ./cloud_results)"
     echo "  --dry_run      Use tiny test dataset, 1 epoch (validates full pipeline)"
     echo "  --parallel     Launch each mode on a separate GPU instance (use with --mode all)"
     exit 1
+fi
+
+if [ "$MODE" = "multitask" ] && [ "$DRY_RUN" = "false" ]; then
+    if [ "$HF_DATASET" != "confect/google-font-weight-dataset-v2" ]; then
+        echo "Error: multitask training requires confect/google-font-weight-dataset-v2"
+        exit 1
+    fi
+    if [ "$HF_RESULTS" != "confect/google-font-classifier-v7-weight" ]; then
+        echo "Error: multitask training requires confect/google-font-classifier-v7-weight"
+        exit 1
+    fi
 fi
 
 # Parallel mode: launch each training mode as a separate instance
@@ -180,7 +195,7 @@ echo "  Results to: $HF_RESULTS"
 echo "============================================"
 
 # --- Build the remote training script ---
-REMOTE_SCRIPT=$(cat <<'TRAINING_SCRIPT'
+IFS= read -r -d '' REMOTE_SCRIPT <<'TRAINING_SCRIPT' || true
 #!/bin/bash
 set -eo pipefail
 
@@ -301,7 +316,7 @@ cd font-model
 # on a rented box. Without it, local edits to train_model.py never run.
 if [ -d /workspace/overrides ] && [ -n "$(ls -A /workspace/overrides 2>/dev/null)" ]; then
     echo "==> Applying local overrides: $(ls /workspace/overrides | tr '\n' ' ')"
-    cp /workspace/overrides/*.py . || true
+    cp /workspace/overrides/* .
 fi
 
 echo "==> Downloading dataset from HuggingFace: $HF_DATASET"
@@ -330,10 +345,14 @@ find data/ -name '._*' -delete 2>/dev/null || true
 rm -rf /root/.cache/huggingface/hub 2>/dev/null || true
 
 echo "==> Dataset ready: $(ls data/train/ | wc -l) train variants, $(ls data/test/ | wc -l) test variants"
+if [ "$MODE" = "multitask" ] && ! compgen -G 'data/train/*/metadata.jsonl' > /dev/null; then
+    echo "EARLY_FAIL: multitask mode requires the paired v2 dataset metadata."
+    exit 1
+fi
 df -h /workspace | tail -1
 
 # Pre-cache the dataset (single process) so multi-GPU doesn't build N copies
-if [ "$NUM_GPUS" -gt 1 ]; then
+if [ "$NUM_GPUS" -gt 1 ] && [ "$MODE" != "multitask" ]; then
     echo "==> Pre-caching dataset for multi-GPU (single process)..."
     python3 -c "
 from datasets import load_dataset
@@ -467,6 +486,48 @@ run_training() {
     kill $sync_pid 2>/dev/null || true
 }
 
+run_multitask() {
+    local mode_name="multitask_lora_r16"
+    local output_dir="${OUTPUT_BASE}/${mode_name}"
+
+    echo "==> Checking for existing checkpoint on HuggingFace..."
+    download_checkpoint_from_hf "$mode_name" "$output_dir"
+    local resume_args=""
+    local latest_ckpt=$(ls -d ${output_dir}/checkpoint-* 2>/dev/null | sort -t- -k2 -n | tail -1)
+    if [ -n "$latest_ckpt" ]; then
+        resume_args="--resume_from_checkpoint $latest_ckpt"
+    fi
+
+    sync_checkpoints_to_hf "$mode_name" "$output_dir" &
+    local sync_pid=$!
+    local train_cmd="python3 train_multitask.py"
+    if [ "$NUM_GPUS" -gt 1 ]; then
+        train_cmd="accelerate launch --num_processes=$NUM_GPUS --mixed_precision=fp16 train_multitask.py"
+    fi
+
+    if $train_cmd \
+        --data_dir data \
+        --labels font_labels_v6.json \
+        --output_dir "$output_dir" \
+        --batch_size "$BATCH_SIZE" \
+        --epochs "$EPOCHS" \
+        --learning_rate "$LR" \
+        --lora_rank 16 \
+        --lora_alpha 32 \
+        --initial_adapter confect/google-font-classifier-v6 \
+        --initial_adapter_subfolder lora_r16/result_model \
+        $resume_args; then
+        echo "==> Finished: $mode_name"
+    else
+        echo "==> FAILED: $mode_name (exit code $?)"
+        FAILED_RUNS="$FAILED_RUNS $mode_name"
+    fi
+    kill $sync_pid 2>/dev/null || true
+}
+
+if [ "$MODE" = "multitask" ]; then
+    run_multitask
+else
 case "$MODE" in
     lora)    run_training "lora_r8" "" ;;
     lora4)   run_training "lora_r4" "--lora_rank 4 --lora_alpha 8" ;;
@@ -484,6 +545,7 @@ case "$MODE" in
         ;;
     *) echo "Unknown mode: $MODE"; exit 1 ;;
 esac
+fi
 
 echo ""
 echo "============================================"
@@ -522,7 +584,6 @@ echo "==> Auto-destroying instance __INSTANCE_ID__..."
 vastai destroy instance __INSTANCE_ID__ -y 2>&1 || true
 echo "==> SCRIPT COMPLETED SUCCESSFULLY at $(date)"
 TRAINING_SCRIPT
-)
 
 # Substitute variables into the remote script (instance ID/API key done per-attempt)
 REMOTE_SCRIPT="${REMOTE_SCRIPT//__HF_DATASET__/$HF_DATASET}"
@@ -656,7 +717,7 @@ print(f'{host} {port}')
     # upstream Create-Inc/font-model, so without this step every local edit to
     # train_model.py or handler.py is silently ignored on the GPU box.
     OVERRIDES=""
-    for f in train_model.py handler.py; do
+    for f in train_model.py train_multitask.py multitask_model.py multitask_dataset.py font_weight_labels.py handler.py font_labels_v6.json; do
         [ -f "$SCRIPT_DIR/$f" ] && OVERRIDES="$OVERRIDES $SCRIPT_DIR/$f"
     done
     if [ -n "$OVERRIDES" ]; then
