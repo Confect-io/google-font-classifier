@@ -15,7 +15,8 @@
 
 set -uo pipefail
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_rsa}"
-RESULTS_REPO="${RESULTS_REPO:-confect/google-font-classifier-v6}"
+RESULTS_REPO="${RESULTS_REPO:-confect/google-font-classifier-v7-weight}"
+MODE_NAME="${MODE_NAME:-multitask_lora_r16}"
 
 read -r ID HOST PORT RATE < <(vastai show instances --raw 2>/dev/null | python3 -c "
 import json,sys
@@ -39,10 +40,10 @@ case "${1:-status}" in
   ssh)  exec "${RSH[@]}" ;;
   log)  exec "${RSH[@]}" "tail -f /workspace/training.log" ;;
   hf)
-    uv run --quiet --with huggingface_hub python3 - "$RESULTS_REPO" <<'PY'
+    uv run --quiet --with huggingface_hub python3 - "$RESULTS_REPO" "$MODE_NAME" <<'PY'
 import sys
 from huggingface_hub import HfApi
-api = HfApi(); repo = sys.argv[1]
+api = HfApi(); repo, mode = sys.argv[1:]
 try:
     fs = api.list_repo_files(repo, repo_type="model")
 except Exception as e:
@@ -55,13 +56,17 @@ if ck:
     try:
         from huggingface_hub import hf_hub_download
         import json
-        st = json.load(open(hf_hub_download(repo, f"lora_r16/checkpoint-{ck[-1]}/trainer_state.json",
+        st = json.load(open(hf_hub_download(repo, f"{mode}/checkpoint-{ck[-1]}/trainer_state.json",
                                             repo_type="model")))
-        print(f"best eval_accuracy: {st.get('best_metric')}")
+        print(f"best eval_joint_accuracy: {st.get('best_metric')}")
         print("best checkpoint:   ", (st.get("best_model_checkpoint") or "").split("/")[-1])
-        ev = [h for h in st["log_history"] if "eval_accuracy" in h]
+        ev = [h for h in st["log_history"] if "eval_joint_accuracy" in h]
         if ev:
-            print(f"last eval: acc {ev[-1]['eval_accuracy']:.4f} at epoch {ev[-1]['epoch']:.1f}")
+            print(
+                f"last eval: family {ev[-1]['eval_family_accuracy']:.4f}, "
+                f"weight {ev[-1]['eval_weight_group_accuracy']:.4f}, "
+                f"joint {ev[-1]['eval_joint_accuracy']:.4f} at epoch {ev[-1]['epoch']:.1f}"
+            )
     except Exception as e:
         print("(trainer_state unavailable:", str(e)[:60], ")")
 print("logs:", [f for f in fs if f.startswith("logs/")])
