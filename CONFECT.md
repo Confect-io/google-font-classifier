@@ -311,6 +311,21 @@ HF_HUB_DISABLE_XET=1 hf upload confect/google-font-weight-dataset-v2 \
 Do not start the Vast run until the local checkpoint has been reloaded, exported
 with `export_multitask_onnx.py`, and executed through ONNX Runtime.
 
+The multitask adapter is relative to the merged v6 adapter, not raw DINOv2.
+`export_multitask_onnx.py` reconstructs v6 before applying the new adapter, and
+the exported metadata records that dependency. When exporting an intermediate
+checkpoint, whose directory has no metadata of its own, pass the result model's
+metadata explicitly:
+
+```bash
+uv run --with 'torch>=2.6,<2.7' --with 'torchvision>=0.21,<0.22' \
+  --with 'transformers<5' --with peft --with onnx python3 \
+  export_multitask_onnx.py \
+    --adapter <checkpoint-directory> \
+    --metadata <result-model>/font_model_metadata.json \
+    --onnx_out <output>.onnx
+```
+
 When approved, the distinct v2 launch command is:
 
 ```bash
@@ -330,7 +345,8 @@ the new ordinal head.
 
 ## Swapping the trained model into the design-agent
 
-After training finishes, the new checkpoint sits in `confect/google-font-classifier`.
+After training finishes, the new checkpoint sits in
+`confect/google-font-classifier-v7-weight`.
 To put it in production:
 
 1. Download the checkpoint, convert to ONNX (export

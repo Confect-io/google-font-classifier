@@ -259,6 +259,8 @@ def main() -> int:
             {
                 "family_labels": labels,
                 "weight_thresholds": model.config.font_weight_thresholds,
+                "initial_adapter": args.initial_adapter,
+                "initial_adapter_subfolder": args.initial_adapter_subfolder,
             },
             separators=(",", ":"),
         )

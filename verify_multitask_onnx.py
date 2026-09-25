@@ -6,12 +6,9 @@ import numpy as np
 import onnxruntime as ort
 import torch
 from handler import get_inference_transform
-from multitask_model import Dinov2ForFontClassification
-from peft import PeftModel
+from export_multitask_onnx import BASE_MODEL, load_model
 from PIL import Image
 from transformers import AutoImageProcessor
-
-BASE_MODEL = "facebook/dinov2-base-imagenet1k-1-layer"
 
 
 def main() -> int:
@@ -19,19 +16,14 @@ def main() -> int:
         description="Compare PyTorch and ONNX family/weight outputs"
     )
     parser.add_argument("--adapter", type=Path, required=True)
+    parser.add_argument("--metadata", type=Path)
     parser.add_argument("--onnx", type=Path, required=True)
     parser.add_argument("--image", type=Path, required=True)
     args = parser.parse_args()
 
-    metadata = json.loads(
-        (args.adapter / "font_model_metadata.json").read_text()
-    )
-    base = Dinov2ForFontClassification.from_pretrained(
-        BASE_MODEL,
-        num_labels=len(metadata["family_labels"]),
-        ignore_mismatched_sizes=True,
-    )
-    model = PeftModel.from_pretrained(base, args.adapter).merge_and_unload().eval()
+    metadata_path = args.metadata or args.adapter / "font_model_metadata.json"
+    metadata = json.loads(metadata_path.read_text())
+    model = load_model(args.adapter, metadata)
     processor = AutoImageProcessor.from_pretrained(BASE_MODEL)
     transform = get_inference_transform(
         processor, processor.size["shortest_edge"]

@@ -1,6 +1,6 @@
 # Font classifier v2: family and weight prediction
 
-Status: local implementation validated; full training and promotion pending
+Status: trained; epoch 12 selected for advisory design-agent integration
 
 Tracking: Confect's design agent currently uses the v6 family classifier plus
 a conservative morphology-based weight hint. That is v1. This document defines
@@ -47,6 +47,22 @@ V2 must replace v1, not run as a second competing hint. Once v2 passes its
 promotion gates and is integrated, delete the morphology estimator and its
 calibration artifact in the same change. If v2 fails the gates, keep v1 and do
 not deploy the new weight output.
+
+## September 2026 training result
+
+The 100-epoch run reached its highest synthetic validation joint accuracy at
+epoch 97, but real-ad smoke tests showed a family regression there. Epoch 12
+retained the Montserrat, Open Sans, and PT Serif fixture matches while reaching
+96.16% family accuracy, 95.51% weight-group accuracy, and 92.38% joint accuracy
+on validation. A balanced locked-test sample from the exact exported ONNX
+measured 95.07% family, 93.15% weight-group, and 89.59% joint accuracy. The
+500/600 group was weakest at 87.13%, so the runtime result remains advisory.
+
+The multitask adapter was trained on top of the merged v6 adapter. Export must
+reconstruct that stack before applying the multitask adapter; applying the new
+adapter directly to raw DINOv2 produces a different, badly regressed family
+model. The exporter records the initial adapter in compact metadata and the
+verification script reconstructs the same stack.
 
 ## Model design
 

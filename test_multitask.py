@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -115,3 +116,46 @@ def test_metrics_report_both_heads_joint_result_and_pair_stability():
     assert result["joint_accuracy"] == 1.0
     assert result["paired_family_stability"] == 1.0
     assert result["family_accuracy_700_800_900"] == 1.0
+
+
+def test_export_reconstructs_the_initial_adapter(monkeypatch):
+    import export_multitask_onnx as exporter
+
+    calls = []
+
+    class FakeModel:
+        def __init__(self, name):
+            self.name = name
+
+        def merge_and_unload(self):
+            return self
+
+        def eval(self):
+            return self
+
+    monkeypatch.setattr(
+        exporter.Dinov2ForFontClassification,
+        "from_pretrained",
+        lambda *args, **kwargs: FakeModel("base"),
+    )
+
+    def from_pretrained(base, adapter, **kwargs):
+        calls.append((base.name, adapter, kwargs))
+        return FakeModel(f"{base.name}+{adapter}")
+
+    monkeypatch.setattr(exporter.PeftModel, "from_pretrained", from_pretrained)
+
+    result = exporter.load_model(
+        Path("weight-adapter"),
+        {
+            "family_labels": ["A", "B"],
+            "initial_adapter": "family-adapter",
+            "initial_adapter_subfolder": "result_model",
+        },
+    )
+
+    assert calls == [
+        ("base", "family-adapter", {"subfolder": "result_model"}),
+        ("base+family-adapter", Path("weight-adapter"), {}),
+    ]
+    assert result.name == "base+family-adapter+weight-adapter"

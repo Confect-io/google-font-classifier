@@ -8,6 +8,26 @@ from peft import PeftModel
 from transformers import AutoImageProcessor
 
 BASE_MODEL = "facebook/dinov2-base-imagenet1k-1-layer"
+INITIAL_ADAPTER = "confect/google-font-classifier-v6"
+INITIAL_ADAPTER_SUBFOLDER = "lora_r16/result_model"
+
+
+def load_model(adapter: Path, metadata: dict):
+    base = Dinov2ForFontClassification.from_pretrained(
+        BASE_MODEL,
+        num_labels=len(metadata["family_labels"]),
+        ignore_mismatched_sizes=True,
+    )
+    initial_adapter = metadata.get("initial_adapter", INITIAL_ADAPTER)
+    if initial_adapter:
+        subfolder = metadata.get(
+            "initial_adapter_subfolder", INITIAL_ADAPTER_SUBFOLDER
+        )
+        adapter_args = {"subfolder": subfolder} if subfolder else {}
+        base = PeftModel.from_pretrained(
+            base, initial_adapter, **adapter_args
+        ).merge_and_unload()
+    return PeftModel.from_pretrained(base, adapter).merge_and_unload().eval()
 
 
 def main() -> int:
@@ -15,20 +35,17 @@ def main() -> int:
         description="Export the family-and-weight classifier to ONNX"
     )
     parser.add_argument("--adapter", type=Path, required=True)
+    parser.add_argument("--metadata", type=Path)
     parser.add_argument("--onnx_out", type=Path, required=True)
     parser.add_argument("--metadata_out", type=Path)
     args = parser.parse_args()
 
-    metadata = json.loads(
-        (args.adapter / "font_model_metadata.json").read_text()
-    )
+    metadata_path = args.metadata or args.adapter / "font_model_metadata.json"
+    metadata = json.loads(metadata_path.read_text())
+    metadata.setdefault("initial_adapter", INITIAL_ADAPTER)
+    metadata.setdefault("initial_adapter_subfolder", INITIAL_ADAPTER_SUBFOLDER)
     labels = metadata["family_labels"]
-    base = Dinov2ForFontClassification.from_pretrained(
-        BASE_MODEL,
-        num_labels=len(labels),
-        ignore_mismatched_sizes=True,
-    )
-    model = PeftModel.from_pretrained(base, args.adapter).merge_and_unload().eval()
+    model = load_model(args.adapter, metadata)
     processor = AutoImageProcessor.from_pretrained(BASE_MODEL)
     input_size = processor.size["shortest_edge"]
 
