@@ -27,4 +27,16 @@ cloud_train_*.log
 fonts/
 data/
 data_smoke/
+fonts_v2/
+data_v2/
 *.tar
+
+# Confect: font-curation intermediates (regenerable via shortlist_fonts.py)
+.gf_metadata.json
+font_candidates.json
+font_embeddings.npz
+picker_data.json
+
+# Exported models — 350 MB each, rebuild with export_onnx.py
+*.onnx
+*.onnx.data

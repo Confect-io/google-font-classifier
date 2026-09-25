@@ -60,6 +60,10 @@ def parse_args():
                       help='Logging level')
     parser.add_argument('--huggingface_model_name', type=str, default=None,
                       help='Name of the model to push to the Hub')
+    parser.add_argument('--dataloader_workers', type=int, default=4,
+                      help='DataLoader worker processes. Linux forks, so the '
+                           'closure transform is fine at 4. Use 0 for local '
+                           'testing on macOS, which spawns instead.')
     return parser.parse_args()
 
 
@@ -125,14 +129,28 @@ def load_checkpoint_with_size_mismatch_handling(base_model, checkpoint_path, pef
         return model
 
 
-def get_transform(processor: AutoImageProcessor, size: int):
+def make_transform(processor: AutoImageProcessor, size: int):
+    """Batch transform for `Dataset.set_transform` — HF's documented pattern
+    for image datasets (see the image-classification tutorial).
+
+    Applied lazily on __getitem__, so nothing is precomputed to disk. The
+    previous `.map()` materialised every image as a float32 tensor into an
+    Arrow cache (~92 GB for v5, ~150 GB at the current size) and rebuilt it on
+    every instance launch.
+
+    Requires `remove_unused_columns=False` in TrainingArguments: Trainer
+    otherwise strips every column the model's forward() does not name, which
+    deletes "image" before this ever runs.
+    """
     aug = get_inference_transform(processor, size)
 
-    def transform(example):
-        # Apply the same pad-to-square + resize + normalize pipeline used at inference
-        # (defined in handler.py) to ensure no train/serve skew.
-        example["pixel_values"] = aug(example["image"])
-        return example
+    def transform(batch):
+        # Same pad-to-square + resize + normalize as inference (handler.py),
+        # so there is no train/serve skew.
+        return {
+            "pixel_values": [aug(img) for img in batch["image"]],
+            "label": batch["label"],
+        }
 
     return transform
 
@@ -186,25 +204,19 @@ if __name__ == "__main__":
         
         logger.info(f"Train size: {len(dataset['train'])}, Validation size: {len(dataset['test'])}")
 
-        transform = get_transform(processor, size)
+        transform = make_transform(processor, size)
 
-        logger.info("Applying data transformations")
-        train_dataset = dataset["train"].map(
-            transform,
-            remove_columns=["image"],
-            desc="Transforming training data"
-        )
-        test_dataset = dataset["test"].map(
-            transform,
-            remove_columns=["image"],
-            desc="Transforming test data"
-        )
-        
-        # Set the format to torch tensors
-        train_dataset.set_format(type="torch", columns=["pixel_values", "label"])
-        test_dataset.set_format(type="torch", columns=["pixel_values", "label"])
-        
-        logger.info("Data preprocessing complete")
+        logger.info("Attaching lazy transform (no Arrow cache build)")
+        train_dataset = dataset["train"]
+        test_dataset = dataset["test"]
+        # set_transform, not map: nothing is precomputed or written to disk, so
+        # there is no multi-GB cache to rebuild on every instance launch. The
+        # transform returns torch tensors directly, so set_format is not needed
+        # (and would undo the transform's output).
+        train_dataset.set_transform(transform)
+        test_dataset.set_transform(transform)
+
+        logger.info("Data pipeline ready")
 
     if args.resnet_baseline:
         from torchvision.models import resnet50, ResNet50_Weights
@@ -316,7 +328,12 @@ if __name__ == "__main__":
         save_total_limit   = 3,
         logging_dir        = os.path.join(args.output_dir, "logs") if args.output_dir else None,
         logging_steps      = 10,
-        dataloader_num_workers = 4,
+        dataloader_num_workers = args.dataloader_workers,
+        # Required by the lazy transform: Trainer otherwise strips every
+        # column the model's forward() does not name, which deletes "image"
+        # before LazyTransform ever runs (KeyError: 'image'). Harmless under
+        # the old .map(), where pixel_values already existed on disk.
+        remove_unused_columns = False,
         report_to          = "tensorboard",
         load_best_model_at_end = True,
         metric_for_best_model = "eval_accuracy",

@@ -1,8 +1,17 @@
 #!/usr/bin/env python3
-"""
-Generate cropped glyph images for DINO‑v2 fine‑tuning.
+"""Render paired synthetic text crops for DINOv2 fine-tuning.
+
+One class per family. Each pair keeps its text and augmentation fixed while
+changing the font weight, allowing the family head to learn weight invariance
+and the ordinal head to learn weight.
+
+Run:
+    uv run --with numpy --with pillow --with tqdm python3 dataset_generator.py \\
+        --font_dir ./fonts --out_dir ./data --train_per_class 1500
 """
 import argparse
+import itertools
+import json
 import logging
 import multiprocessing
 import os
@@ -11,429 +20,358 @@ import random
 import sys
 
 import numpy as np
-
-from fontTools.ttLib import TTFont
+from font_weight_labels import font_weight, weight_group
 from PIL import Image, ImageDraw, ImageFont
 from tqdm import tqdm
 
-# Disable PIL decompression bomb warning for large images
 Image.MAX_IMAGE_PIXELS = None
-
 logger = logging.getLogger(__name__)
 
-FONT_ALLOWLIST = [
-    "ABeeZee", "Abel", "AbrilFatface", "AlbertSans", "AlegreyaSans",
-    "AlfaSlabOne", "AlumniSans", "Anton", "Archivo", "ArchivoBlack",
-    "ArchivoNarrow", "Arimo", "Arvo", "Asap", "AtkinsonHyperlegible",
-    "Barlow", "BarlowCondensed", "BarlowSemiCondensed", "BeVietnamPro",
-    "BebasNeue", "Bitter", "BodoniModa", "BreeSerif",
-    "BricolageGrotesque", "Bungee", "Cabin", "Cantarell", "Cardo",
-    "ChangaOne", "Cinzel", "Comfortaa", "Cormorant", "CormorantGaramond",
-    "Creepster", "CrimsonText", "DMSans", "DMSerifDisplay", "DMSerifText",
-    "Domine", "Dosis", "EBGaramond", "EncodeSans", "Epilogue", "Exo",
-    "Exo2", "Figtree", "FiraSans", "FiraSansCondensed", "FjallaOne",
-    "Fraunces", "Fredoka", "Geist", "Geologica", "Goldman",
-    "HankenGrotesk", "IBMPlexSans", "IBMPlexSansCondensed", "IBMPlexSerif",
-    "InstrumentSans", "InstrumentSerif", "Inter", "InterTight",
-    "JosefinSans", "Jost", "Karla", "Lato", "LeagueSpartan", "Lexend",
-    "LexendDeca", "LibreBaskerville", "LibreFranklin", "LilitaOne",
-    "Literata", "Lobster", "LobsterTwo", "Lora", "LuckiestGuy",
-    "MPLUSRounded1c", "Manrope", "Marcellus", "MavenPro", "Merriweather",
-    "MerriweatherSans", "Michroma", "Montserrat", "MontserratAlternates",
-    "Mulish", "NewsCycle", "Newsreader", "NotoSans", "NotoSerif", "Nunito",
-    "NunitoSans", "Onest", "OpenSans", "Orbitron", "Oswald", "Outfit",
-    "Overpass", "Oxygen", "PTSans", "PTSansNarrow", "PTSerif", "Play",
-    "PlayfairDisplay", "PlusJakartaSans", "PressStart2P", "PublicSans",
-    "Questrial", "Quicksand", "Raleway", "RedHatDisplay", "RedHatText",
-    "RethinkSans", "Righteous", "Roboto", "RobotoCondensed", "RobotoFlex",
-    "RobotoSerif", "RobotoSlab", "Rowdies", "Rubik", "Saira",
-    "SairaCondensed", "Sanchez", "SchibstedGrotesk", "ShareTech",
-    "Signika", "Slabo27px", "SmoochSans", "SofiaSans", "Sora",
-    "SourceSans3", "SourceSerif4", "SpaceGrotesk", "Spectral", "Syne",
-    "TitanOne", "TitilliumWeb", "Ubuntu", "Unbounded", "Unna", "Urbanist",
-    "VarelaRound", "Vollkorn", "WorkSans", "ZillaSlab",
-]
+_TEXT_CORPUS = None
 
 # ---------------------------------------------------------------------------
-# Text corpus (preloaded into memory for workers)
+# Augmentation ranges.
+#
+# These exist to close the gap between what we render and what the model
+# actually sees: a JPEG-compressed, often low-resolution, usually SINGLE-LINE
+# crop handed over by OCR. v5 trained on pristine multi-line PNG blocks, which
+# is none of those things.
 # ---------------------------------------------------------------------------
+SINGLE_LINE_P = 0.75      # OCR emits text lines, so most samples are one line
+TARGET_H = (22, 150)      # px per line after downsampling — real crops are small
+JPEG_QUALITY = (55, 95)   # every production image has been through JPEG
+NOISE_SIGMA = (0.0, 0.06) # fraction of 255; v5 used a fixed 0.10 on every image
+CONTRAST_MIN = (60, 120)  # luminance gap between text and background
 
-_TEXT_CORPUS = None  # populated by _load_text_corpus()
 
 def _load_text_corpus():
-    """Read all text files from input_data/ into a list of strings."""
-    input_data_dir = pathlib.Path("input_data")
-    if not input_data_dir.exists():
-        raise ValueError(f"Input data directory {input_data_dir} does not exist")
-    texts = []
-    for txt_file in sorted(input_data_dir.glob("*.txt")):
-        content = txt_file.read_text(encoding="utf-8").strip()
-        if len(content) >= 100:
-            texts.append(content)
+    d = pathlib.Path("input_data")
+    if not d.exists():
+        raise ValueError(f"Input data directory {d} does not exist")
+    texts = [f.read_text(encoding="utf-8").strip() for f in sorted(d.glob("*.txt"))]
+    texts = [t for t in texts if len(t) >= 100]
     if not texts:
-        raise ValueError(f"No usable text files found in {input_data_dir}")
+        raise ValueError(f"No usable text files in {d}")
     return texts
 
 
-def choose_sentence(corpus):
-    """Choose a random substring from the preloaded corpus."""
+def choose_sentence(corpus, single_line: bool):
     content = random.choice(corpus)
-    substring_length = random.randint(20, 100)
-    start_pos = random.randint(0, len(content) - substring_length)
-    substring = content[start_pos:start_pos + substring_length]
-    # Randomly replace some spaces with newlines
-    substring = ''.join(
-        '\n' if c == ' ' and random.random() < 0.2 else c
-        for c in substring
-    )
-    return substring.strip() or None
+    # Short strings for single-line crops, matching an OCR text box; longer
+    # ones only when we deliberately build a multi-line block.
+    n = random.randint(8, 38) if single_line else random.randint(40, 110)
+    start = random.randint(0, max(0, len(content) - n))
+    s = content[start:start + n]
+    if not single_line:
+        s = "".join("\n" if c == " " and random.random() < 0.18 else c for c in s)
+    s = s.strip()
+    if single_line:
+        s = s.replace("\n", " ")
+        # Ad copy is frequently set in caps; the corpus never is.
+        if random.random() < 0.18:
+            s = s.upper()
+    return s or None
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def font_is_variable(font_path: pathlib.Path) -> bool:
-    return "fvar" in TTFont(str(font_path))
-
-def sanitize_filename(text: str) -> str:
-    """Sanitize a string to be safe for use in filenames."""
-    replacements = {
-        '/': '_slash_',
-        '\\': '_backslash_',
-        ':': '_colon_',
-        '*': '_star_',
-        '?': '_question_',
-        '"': '_quote_',
-        '<': '_lt_',
-        '>': '_gt_',
-        '|': '_pipe_',
-        '\n': '_newline_',
-        '\t': '_tab_',
-        ' ': '_space_',
-        '`': '_backtick_',
-        '~': '_tilde_',
-        '!': '_exclamation_',
-        '@': '_at_',
-        '#': '_hash_',
-        '$': '_dollar_',
-        '%': '_percent_',
-        '^': '_caret_',
-        '&': '_ampersand_',
-        '(': '_lparen_',
-        ')': '_rparen_',
-        '{': '_lbrace_',
-        '}': '_rbrace_',
-        '[': '_lbracket_',
-        ']': '_rbracket_',
-        ';': '_semicolon_',
-        ',': '_comma_',
-        '.': '_dot_',
-        "'": "_single_quote_",
-    }
-    sanitized = text
-    for char, replacement in replacements.items():
-        sanitized = sanitized.replace(char, replacement)
-    if len(sanitized) > 200:
-        sanitized = "nameTooLong" + str(random.randint(0, 1000000))
-    return sanitized
+def _rand_rgb():
+    return (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
 
 
-# ---------------------------------------------------------------------------
-# Rendering
-# ---------------------------------------------------------------------------
+def _lum(c):
+    return 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
+
 
 def render_and_crop(text, font, padding, img_size):
-    # Generate random background and text colors with sufficient contrast
-    def random_rgb():
-        return (random.randint(0, 255), random.randint(0, 255), random.randint(0, 255))
-
-    def luminance(color):
-        r, g, b = color
-        return 0.299 * r + 0.587 * g + 0.114 * b
-
-    bg_color = random_rgb()
-    bg_lum = luminance(bg_color)
-    text_color = None
-    for _ in range(50):
-        candidate = random_rgb()
-        if abs(bg_lum - luminance(candidate)) >= 80:
-            text_color = candidate
+    bg = _rand_rgb()
+    bg_lum = _lum(bg)
+    floor = random.randint(*CONTRAST_MIN)
+    fg = None
+    for _ in range(40):
+        cand = _rand_rgb()
+        if abs(bg_lum - _lum(cand)) >= floor:
+            fg = cand
             break
-    if text_color is None:
-        text_color = (255, 255, 255) if bg_lum < 128 else (0, 0, 0)
+    if fg is None:
+        fg = (255, 255, 255) if bg_lum < 128 else (0, 0, 0)
 
-    lines = text.split('\n')
-    line_height = font.getbbox('Ay')[3] - font.getbbox('Ay')[1]
-    line_spacing = int(line_height * 0.2)
+    lines = [ln for ln in text.split("\n") if ln.strip()] or [text]
+    line_h = font.getbbox("Ay")[3] - font.getbbox("Ay")[1]
+    spacing = int(line_h * random.uniform(0.12, 0.4))
 
-    # Word-wrap long lines to keep the aspect ratio reasonable.
-    # Without this, a long single-line sentence renders as e.g. 8000x224,
-    # which after pad-to-square + resize becomes a tiny unreadable stripe.
-    # Cap each line at ~8 * line_height pixels wide (produces ~2:1 to 4:1 images).
-    max_line_px = line_height * 8
-    wrapped = []
-    for line in lines:
-        words = line.split(' ')
-        current = words[0] if words else ''
-        for word in words[1:]:
-            test = current + ' ' + word
-            bbox = font.getbbox(test)
-            if bbox[2] - bbox[0] > max_line_px:
-                wrapped.append(current)
-                current = word
-            else:
-                current = test
-        wrapped.append(current)
-    lines = wrapped
+    # Wrap only multi-line blocks. A single line stays long and thin on
+    # purpose — that is the shape OCR hands us.
+    if len(lines) > 1:
+        max_px = line_h * random.uniform(6, 12)
+        wrapped = []
+        for line in lines:
+            words = line.split(" ")
+            cur = words[0] if words else ""
+            for w in words[1:]:
+                test = cur + " " + w
+                bb = font.getbbox(test)
+                if bb[2] - bb[0] > max_px:
+                    wrapped.append(cur)
+                    cur = w
+                else:
+                    cur = test
+            wrapped.append(cur)
+        lines = wrapped
 
-    total_height = len(lines) * line_height + (len(lines) - 1) * line_spacing
+    total_h = len(lines) * line_h + (len(lines) - 1) * spacing
+    max_w = max((font.getbbox(l)[2] - font.getbbox(l)[0]) for l in lines if l.strip())
+    if max_w <= 0:
+        return None
 
-    max_width = 0
-    for line in lines:
-        if line.strip():
-            left, top, right, bottom = font.getbbox(line)
-            max_width = max(max_width, right - left)
-
-    canvas_width = max_width + padding * 2
-    canvas_height = int(total_height) + padding * 2
-
-    canvas = Image.new("RGB", (canvas_width, canvas_height), bg_color)
+    cw, ch = int(max_w) + padding * 2, int(total_h) + padding * 2
+    canvas = Image.new("RGB", (cw, ch), bg)
     draw = ImageDraw.Draw(canvas)
-
-    alignment = random.choice(['left', 'center', 'right'])
-    start_y = padding
+    align = random.choice(["left", "center", "right"])
     for i, line in enumerate(lines):
-        if line.strip():
-            line_bbox = font.getbbox(line)
-            line_width = line_bbox[2] - line_bbox[0]
-            if alignment == 'left':
-                text_x = padding
-            elif alignment == 'center':
-                text_x = (canvas_width - line_width) // 2
-            else:
-                text_x = canvas_width - line_width - padding
-            text_y = start_y + i * (line_height + line_spacing)
-            draw.text((text_x, text_y), line, fill=text_color, font=font, anchor="lt")
+        if not line.strip():
+            continue
+        bb = font.getbbox(line)
+        lw = bb[2] - bb[0]
+        x = padding if align == "left" else (cw - lw) // 2 if align == "center" else cw - lw - padding
+        draw.text((x, padding + i * (line_h + spacing)), line, fill=fg, font=font, anchor="lt")
 
     bbox = canvas.getbbox()
     if not bbox:
         return None
-    glyph = canvas.crop(bbox)
+    # OCR boxes are not perfect glyph bounds: they carry a little slack, and
+    # they sometimes shave an ascender or a final letter. v5 cropped to the
+    # exact bbox every time, so the model never saw either.
+    x0, y0, x1, y1 = bbox
+    pad_y = max(1, int((y1 - y0) * 0.10))
+    pad_x = max(1, int((y1 - y0) * 0.18))
+    x0 += random.randint(-pad_x, pad_x)
+    x1 += random.randint(-pad_x, pad_x)
+    y0 += random.randint(-pad_y, pad_y)
+    y1 += random.randint(-pad_y, pad_y)
+    x0, y0 = max(0, x0), max(0, y0)
+    x1, y1 = min(canvas.width, x1), min(canvas.height, y1)
+    if x1 - x0 < 4 or y1 - y0 < 4:
+        return None
+    glyph = canvas.crop((x0, y0, x1, y1))
 
-    target_height = img_size
-    aspect_ratio = glyph.width / glyph.height
-    target_width = int(target_height * aspect_ratio)
-    resized_glyph = glyph.resize((target_width, target_height), Image.Resampling.LANCZOS)
+    # Resolution round-trip. Real crops are 20-40px tall and get upscaled by
+    # the preprocessing; v5 rendered everything pristine and large, so the
+    # model never saw the softness that implies.
+    per_line = random.randint(*TARGET_H)
+    target_h = min(per_line * len(lines), img_size * 3)
+    target_w = max(4, int(target_h * glyph.width / glyph.height))
+    if target_w > img_size * 12:  # guard absurd aspect ratios
+        return None
+    glyph = glyph.resize((target_w, target_h), Image.Resampling.LANCZOS)
 
-    # Add gaussian noise (vectorized)
-    arr = np.array(resized_glyph, dtype=np.float32)
-    noise = np.random.normal(0, 0.1 * 255, arr.shape).astype(np.float32)
-    arr = np.clip(arr + noise, 0, 255).astype(np.uint8)
-    return Image.fromarray(arr)
+    sigma = random.uniform(*NOISE_SIGMA)
+    if sigma > 0:
+        arr = np.asarray(glyph, dtype=np.float32)
+        arr += np.random.normal(0, sigma * 255, arr.shape).astype(np.float32)
+        glyph = Image.fromarray(np.clip(arr, 0, 255).astype(np.uint8))
+    return glyph
 
-
-# ---------------------------------------------------------------------------
-# Per-variant worker (runs in a subprocess)
-# ---------------------------------------------------------------------------
 
 def _worker_init(corpus):
-    """Store corpus in each worker's global state."""
     global _TEXT_CORPUS
     _TEXT_CORPUS = corpus
 
 
-def _generate_variant(args):
-    """Generate all images for one font variant. Designed for multiprocessing."""
-    font_path, font_name, variation_name, train_dir, test_dir, font_size, img_size, padding, no_clobber = args
+def _render_with_seed(text, font, padding, img_size, seed):
+    random_state = random.getstate()
+    numpy_state = np.random.get_state()
+    try:
+        random.seed(seed)
+        np.random.seed(seed % (2**32))
+        return render_and_crop(text, font, padding, img_size)
+    finally:
+        random.setstate(random_state)
+        np.random.set_state(numpy_state)
 
-    font = ImageFont.truetype(str(font_path), font_size, layout_engine=ImageFont.Layout.BASIC)
-    if variation_name is not None:
-        font.set_variation_by_name(variation_name)
-        variant_str = variation_name.decode("utf-8").replace(" ", "_")
-        full_name = f"{font_name}_{variant_str}"
-    else:
-        full_name = font_name
 
-    font_train_dir = pathlib.Path(train_dir) / full_name
-    font_test_dir = pathlib.Path(test_dir) / full_name
-    font_train_dir.mkdir(parents=True, exist_ok=True)
-    font_test_dir.mkdir(parents=True, exist_ok=True)
+def _sample_text(corpus):
+    single = random.random() < SINGLE_LINE_P
+    roll = random.random()
+    if roll < 0.10:
+        return f"{random.randint(1, 1000000)}"
+    if roll < 0.18:
+        return f"${random.randint(1, 100000)}"
+    if roll < 0.25:
+        return f"{random.randint(0, 100)}%"
+    return choose_sentence(corpus, single)
+
+
+def _generate_family(args):
+    """Generate same-text pairs across the available weight groups."""
+    (family, ttf_paths, train_dir, test_dir, font_size, img_size, padding,
+     n_train, n_test, no_clobber, seed) = args
+
+    fonts = []
+    for p in ttf_paths:
+        try:
+            weight = font_weight(p)
+            fonts.append(
+                (
+                    weight,
+                    ImageFont.truetype(
+                        p, font_size, layout_engine=ImageFont.Layout.BASIC
+                    ),
+                )
+            )
+        except Exception as e:
+            logger.warning("load failed %s: %s", p, e)
+    if not fonts:
+        return family, 0, 0
 
     corpus = _TEXT_CORPUS
-    _counter = [0]  # mutable so nested function can increment
+    made = {"train": 0, "test": 0}
 
-    def generate_image(string, root):
-        img = render_and_crop(string, font, padding, img_size)
-        if img is not None:
-            target_file = root / f"{_counter[0]}.png"
-            if target_file.exists() and no_clobber:
-                _counter[0] += 1
-                return
-            img.save(target_file, compress_level=1)
-            _counter[0] += 1
+    by_group = {}
+    for weight, font in fonts:
+        by_group.setdefault(weight_group(weight), []).append((weight, font))
+    groups = sorted(by_group)
+    group_pairs = list(itertools.combinations(groups, 2)) or [(groups[0],)]
 
-    # Training set
-    for _ in range(500):
-        sentence = choose_sentence(corpus)
-        if sentence:
-            generate_image(sentence, font_train_dir)
-    for _ in range(25):
-        generate_image(f"{random.randint(1, 1000000)}", font_train_dir)
-    for _ in range(25):
-        generate_image(f"${random.randint(1, 1000000)}", font_train_dir)
-    for _ in range(25):
-        generate_image(f"{random.randint(0, 100)}%", font_train_dir)
+    def emit(root, split, pair_index, image_index, remaining):
+        text = _sample_text(corpus)
+        if not text:
+            return []
+        selected_groups = group_pairs[pair_index % len(group_pairs)]
+        selected = [random.choice(by_group[group]) for group in selected_groups]
+        augmentation_seed = random.randrange(2**31)
+        quality = random.randint(*JPEG_QUALITY)
+        records = []
+        pair_id = f"{family}:{split}:{pair_index}"
+        for weight, font in selected[:remaining]:
+            image = _render_with_seed(
+                text, font, padding, img_size, augmentation_seed
+            )
+            if image is None:
+                continue
+            filename = (
+                f"{image_index + len(records):06d}-p{pair_index:06d}-w{weight}.jpg"
+            )
+            destination = root / filename
+            if not no_clobber or not destination.exists():
+                image.save(
+                    destination,
+                    "JPEG",
+                    quality=quality,
+                    optimize=False,
+                    subsampling=2,
+                )
+            records.append(
+                {
+                    "file_name": filename,
+                    "family": family,
+                    "weight": weight,
+                    "weight_group": weight_group(weight),
+                    "pair_id": pair_id,
+                }
+            )
+        return records
 
-    # Test set
-    for _ in range(25):
-        sentence = choose_sentence(corpus)
-        if sentence:
-            generate_image(sentence, font_test_dir)
-    for _ in range(5):
-        generate_image(f"{random.randint(1, 1000000)}", font_test_dir)
-    for _ in range(5):
-        generate_image(f"${random.randint(1, 1000000)}", font_test_dir)
-    for _ in range(5):
-        generate_image(f"{random.randint(0, 100)}%", font_test_dir)
+    for split, count, base in (("train", n_train, pathlib.Path(train_dir)),
+                               ("test", n_test, pathlib.Path(test_dir))):
+        random.seed(f"{seed}:{family}:{split}")
+        np.random.seed(random.randrange(2**32))
+        root = base / family
+        root.mkdir(parents=True, exist_ok=True)
+        records = []
+        pair_index = 0
+        attempts = 0
+        while len(records) < count and attempts < count * 3:
+            attempts += 1
+            pair_records = emit(
+                root,
+                split,
+                pair_index,
+                len(records),
+                count - len(records),
+            )
+            if pair_records:
+                records.extend(pair_records)
+                pair_index += 1
+        metadata_tmp = root / "metadata.jsonl.tmp"
+        metadata_tmp.write_text(
+            "".join(json.dumps(record, sort_keys=True) + "\n" for record in records)
+        )
+        metadata_tmp.replace(root / "metadata.jsonl")
+        made[split] = len(records)
+    return family, made["train"], made["test"]
 
-    return full_name
 
-
-# ---------------------------------------------------------------------------
-# Main pipeline
-# ---------------------------------------------------------------------------
-
-def build_dataset(font_dir, out_dir, font_size, img_size, padding, no_clobber, workers):
+def build_dataset(font_dir, out_dir, font_size, img_size, padding, no_clobber,
+                  workers, n_train, n_test, seed, selected_families=None):
     font_dir, out_dir = pathlib.Path(font_dir), pathlib.Path(out_dir)
     train_dir, test_dir = out_dir / "train", out_dir / "test"
     train_dir.mkdir(parents=True, exist_ok=True)
     test_dir.mkdir(parents=True, exist_ok=True)
 
-    font_paths = list(font_dir.rglob("*.ttf")) + list(font_dir.rglob("*.otf"))
-    allowlist_lower = [f.lower() for f in FONT_ALLOWLIST]
-    font_paths = [fp for fp in font_paths if fp.stem.split("[")[0].split("-")[0].lower() in allowlist_lower]
-    if not font_paths:
-        sys.exit(f"No font files found under {font_dir!s}")
+    # The directory IS the class. No allowlist to keep in sync any more.
+    families = []
+    for d in sorted(p for p in font_dir.iterdir() if p.is_dir()):
+        if selected_families and d.name not in selected_families:
+            continue
+        ttfs = sorted(str(f) for f in d.glob("*.ttf"))
+        if ttfs:
+            families.append((d.name, ttfs))
+    if not families:
+        sys.exit(f"No family directories with .ttf files under {font_dir}")
 
-    missing_fonts = [f for f in FONT_ALLOWLIST if not any(f.lower() in fp.stem.lower() for fp in font_paths)]
-    if missing_fonts:
-        raise ValueError(f"Missing fonts under {font_dir!s}: {missing_fonts}")
+    weights_total = sum(len(t) for _, t in families)
+    print(f"{len(families)} families, {weights_total} weight files "
+          f"({weights_total / len(families):.1f} per family)")
+    print(f"Target: {n_train} train + {n_test} test per family "
+          f"= {len(families) * (n_train + n_test):,} images")
 
-    # Preload text corpus
     corpus = _load_text_corpus()
+    work = [(fam, ttfs, str(train_dir), str(test_dir), font_size, img_size,
+             padding, n_train, n_test, no_clobber, seed)
+            for fam, ttfs in families]
 
-    # Enumerate all (font_path, variant) work items, deduplicating by output label
-    work_items = []
-    seen_labels = {}  # label -> font_path (for duplicate detection)
-    for font_path in sorted(font_paths):
-        font_family_name = font_path.stem.split("[")[0]
-        try:
-            if font_is_variable(font_path):
-                font = ImageFont.truetype(str(font_path), font_size, layout_engine=ImageFont.Layout.BASIC)
-                for variation in font.get_variation_names():
-                    variant_str = variation.decode("utf-8").replace(" ", "_")
-                    label = f"{font_family_name}_{variant_str}"
-                    if label in seen_labels:
-                        logger.warning(f"Skipping duplicate label '{label}' from {font_path.name} (already from {seen_labels[label].name})")
-                        continue
-                    seen_labels[label] = font_path
-                    work_items.append((
-                        font_path, font_family_name, variation,
-                        str(train_dir), str(test_dir),
-                        font_size, img_size, padding, no_clobber,
-                    ))
-            else:
-                label = font_family_name
-                if label in seen_labels:
-                    logger.warning(f"Skipping duplicate label '{label}' from {font_path.name} (already from {seen_labels[label].name})")
-                    continue
-                seen_labels[label] = font_path
-                work_items.append((
-                    font_path, font_family_name, None,
-                    str(train_dir), str(test_dir),
-                    font_size, img_size, padding, no_clobber,
-                ))
-        except Exception as e:
-            logger.error(f"Failed to enumerate variants for {font_path.name}: {e}")
+    results = []
+    with multiprocessing.Pool(workers, initializer=_worker_init,
+                              initargs=(corpus,)) as pool:
+        for r in tqdm(pool.imap_unordered(_generate_family, work),
+                      total=len(work), unit="family"):
+            results.append(r)
 
-    print(f"Found {len(work_items)} unique font variants from {len(font_paths)} font files")
-    print(f"Generating images using {workers} workers ...")
-
-    with multiprocessing.Pool(workers, initializer=_worker_init, initargs=(corpus,)) as pool:
-        for name in tqdm(
-            pool.imap_unordered(_generate_variant, work_items),
-            total=len(work_items),
-            unit="variant",
-        ):
-            pass
-
-    # --- Post-generation validation ---
-    train_variants = sorted(d for d in os.listdir(train_dir) if os.path.isdir(train_dir / d))
-    test_variants = sorted(d for d in os.listdir(test_dir) if os.path.isdir(test_dir / d))
-
-    train_total = sum(
-        len([f for f in os.listdir(train_dir / v) if f.endswith(".png")])
-        for v in train_variants
-    )
-    test_total = sum(
-        len([f for f in os.listdir(test_dir / v) if f.endswith(".png")])
-        for v in test_variants
-    )
-
-    print(f"\n--- Generation summary ---")
-    print(f"  Output:          {out_dir}")
-    print(f"  Train variants:  {len(train_variants)}")
-    print(f"  Test variants:   {len(test_variants)}")
-    print(f"  Train images:    {train_total} ({train_total / max(len(train_variants), 1):.0f} per variant)")
-    print(f"  Test images:     {test_total} ({test_total / max(len(test_variants), 1):.0f} per variant)")
-
-    if set(train_variants) != set(test_variants):
-        missing_test = set(train_variants) - set(test_variants)
-        missing_train = set(test_variants) - set(train_variants)
-        if missing_test:
-            print(f"  WARNING: {len(missing_test)} variants in train but not test: {sorted(missing_test)[:5]}")
-        if missing_train:
-            print(f"  WARNING: {len(missing_train)} variants in test but not train: {sorted(missing_train)[:5]}")
-
-    # Check for empty variant dirs
-    empty_train = [v for v in train_variants if len(os.listdir(train_dir / v)) == 0]
-    empty_test = [v for v in test_variants if len(os.listdir(test_dir / v)) == 0]
-    if empty_train:
-        print(f"  WARNING: {len(empty_train)} empty train dirs: {empty_train[:5]}")
-    if empty_test:
-        print(f"  WARNING: {len(empty_test)} empty test dirs: {empty_test[:5]}")
-
-    print(f"Done.")
+    short = [(f, tr) for f, tr, _ in results if tr < n_train]
+    total_train = sum(tr for _, tr, _ in results)
+    total_test = sum(te for _, _, te in results)
+    print("\n--- Summary ---")
+    print(f"  Families:     {len(results)}")
+    print(f"  Train images: {total_train:,}")
+    print(f"  Test images:  {total_test:,}")
+    if short:
+        print(f"  WARNING: {len(short)} families under target: {short[:5]}")
+    print("Done.")
 
 
 def cli():
-    ap = argparse.ArgumentParser(description="Crop glyphs for DINO v2 fine‑tuning")
-    ap.add_argument("--font_dir",  required=True, help="Directory with TTF/OTF files")
-    ap.add_argument("--out_dir",   default="glyphs224", help="Destination root folder")
-    ap.add_argument("--img_size",  type=int, default=224, help="Final square size (px)")
-    ap.add_argument("--font_size", type=int, default=48,
-                    help="Font size used for initial rendering")
-    ap.add_argument("--padding",   type=int, default=50, help="Pixels of padding before crop")
-    ap.add_argument("--no-clobber", action="store_true", help="Skip existing files, useful for rerunning when there are errors.")
-    ap.add_argument("--workers",   type=int, default=None,
-                    help="Number of parallel workers (default: number of CPU cores)")
-    ap.add_argument("--verbose",   action="store_true", help="Verbose output")
+    ap = argparse.ArgumentParser(description="Render font crops for DINOv2")
+    ap.add_argument("--font_dir", required=True, help="Dir of per-family subdirs")
+    ap.add_argument("--out_dir", default="data")
+    ap.add_argument("--img_size", type=int, default=256,
+                    help="Reference size for the resolution round-trip")
+    ap.add_argument("--font_size", type=int, default=150,
+                    help="Render size before downsampling")
+    ap.add_argument("--padding", type=int, default=40)
+    ap.add_argument("--train_per_class", type=int, default=1500)
+    ap.add_argument("--test_per_class", type=int, default=150)
+    ap.add_argument("--no-clobber", action="store_true")
+    ap.add_argument("--workers", type=int, default=None)
+    ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--families", nargs="+")
+    ap.add_argument("--verbose", action="store_true")
     args = ap.parse_args()
 
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING)
+    build_dataset(args.font_dir, args.out_dir, args.font_size, args.img_size,
+                  args.padding, args.no_clobber, args.workers or os.cpu_count() or 1,
+                  args.train_per_class, args.test_per_class, args.seed,
+                  set(args.families) if args.families else None)
 
-    workers = args.workers or os.cpu_count() or 1
-
-    build_dataset(
-        font_dir    = args.font_dir,
-        out_dir     = args.out_dir,
-        font_size   = args.font_size,
-        img_size    = args.img_size,
-        padding     = args.padding,
-        no_clobber  = args.no_clobber,
-        workers     = workers,
-    )
 
 if __name__ == "__main__":
     cli()
