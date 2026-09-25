@@ -42,7 +42,8 @@ case "${1:-status}" in
   hf)
     uv run --quiet --with huggingface_hub python3 - "$RESULTS_REPO" "$MODE_NAME" <<'PY'
 import sys
-from huggingface_hub import HfApi
+import json
+from huggingface_hub import HfApi, hf_hub_download
 api = HfApi(); repo, mode = sys.argv[1:]
 try:
     fs = api.list_repo_files(repo, repo_type="model")
@@ -52,10 +53,20 @@ ck = sorted({int(f.split("/")[1].split("-")[1]) for f in fs if "/checkpoint-" in
 print("checkpoints synced:", len(ck), "| latest:", ck[-3:] if ck else "none yet")
 done = any("result_model" in f for f in fs)
 print("result_model present:", done, "<- run completed" if done else "<- still running or crashed")
+if done:
+    try:
+        locked = json.load(open(hf_hub_download(
+            repo, f"{mode}/result_model/locked_test_metrics.json", repo_type="model"
+        )))
+        print(
+            f"locked test: family {locked['test_family_accuracy']:.4f}, "
+            f"weight {locked['test_weight_group_accuracy']:.4f}, "
+            f"joint {locked['test_joint_accuracy']:.4f}"
+        )
+    except Exception as e:
+        print("(locked test metrics unavailable:", str(e)[:60], ")")
 if ck:
     try:
-        from huggingface_hub import hf_hub_download
-        import json
         st = json.load(open(hf_hub_download(repo, f"{mode}/checkpoint-{ck[-1]}/trainer_state.json",
                                             repo_type="model")))
         print(f"best eval_joint_accuracy: {st.get('best_metric')}")
